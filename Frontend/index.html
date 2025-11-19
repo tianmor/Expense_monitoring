@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Expense Monitoring System</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>💰 Expense Monitoring System</h1>
+
+    <div class="form">
+      <h3>Add Expense</h3>
+      <input id="categoryInput" placeholder="Category (e.g. Food)">
+      <input id="amountInput" type="number" placeholder="Amount">
+      <input id="descInput" placeholder="Description">
+      <input id="dateInput" type="date">
+      <button onclick="addExpense()">Add Expense</button>
+    </div>
+
+    <h3>Expenses List</h3>
+    <ul id="expenseList"></ul>
+  </div>
+
+  <script>
+    var api = "http://localhost:3000/expenses";
+
+    // Get all expenses
+    function getExpenses() {
+      fetch(api)
+        .then(res => res.json())
+        .then(data => {
+          var list = document.getElementById("expenseList");
+          list.innerHTML = "";
+          data.forEach(exp => {
+            var li = document.createElement("li");
+            const formattedDate = new Date(exp.date).toISOString().split("T")[0];
+            li.innerHTML = `
+              <strong>${exp.category}</strong> - ₱${exp.amount} 
+              <em>(${formattedDate})</em> : ${exp.description}
+            `;
+
+
+            // Update button
+            var updateBtn = document.createElement("button");
+            updateBtn.innerText = "Update";
+            updateBtn.onclick = function() { updateExpense(exp.id); };
+            li.appendChild(updateBtn);
+
+            // Delete button
+            var deleteBtn = document.createElement("button");
+            deleteBtn.innerText = "Delete";
+            deleteBtn.onclick = function() { deleteExpense(exp.id); };
+            li.appendChild(deleteBtn);
+
+            list.appendChild(li);
+          });
+        });
+    }
+
+    // Add expense
+    function addExpense() {
+      var category = document.getElementById("categoryInput").value.trim();
+      var amount = document.getElementById("amountInput").value.trim();
+      var description = document.getElementById("descInput").value.trim();
+      var date = document.getElementById("dateInput").value;
+
+      if (!category || !amount || !date) {
+        alert("Please fill all required fields.");
+        return;
+      }
+
+      fetch(api, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, amount, description, date })
+      }).then(() => {
+        getExpenses();
+        document.getElementById("categoryInput").value = "";
+        document.getElementById("amountInput").value = "";
+        document.getElementById("descInput").value = "";
+        document.getElementById("dateInput").value = "";
+      });
+    }
+
+    // Update expense
+    function updateExpense(id) {
+      var newCategory = prompt("Enter new category:");
+      var newAmount = prompt("Enter new amount:");
+      var newDesc = prompt("Enter new description:");
+      var newDate = prompt("Enter new date (YYYY-MM-DD):");
+
+      if (!newCategory || !newAmount || !newDate) return;
+
+      fetch(api + "/" + id, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: newCategory,
+          amount: newAmount,
+          description: newDesc,
+          date: newDate
+        })
+      }).then(() => getExpenses());
+    }
+
+    // Delete expense
+    function deleteExpense(id) {
+      if (confirm("Delete this expense?")) {
+        fetch(api + "/" + id, { method: "DELETE" })
+          .then(() => getExpenses());
+      }
+    }
+
+    getExpenses();
+  </script>
+</body>
+</html>
