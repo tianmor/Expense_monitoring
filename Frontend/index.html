@@ -1,9 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Expense Monitoring System</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- SweetAlert2 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
   <div class="container">
@@ -11,10 +14,10 @@
 
     <div class="form">
       <h3>Add Expense</h3>
-      <input id="categoryInput" placeholder="Category (e.g. Food)">
-      <input id="amountInput" type="number" placeholder="Amount">
-      <input id="descInput" placeholder="Description">
-      <input id="dateInput" type="date">
+      <input id="categoryInput" placeholder="Category (e.g. Food)" />
+      <input id="amountInput" type="number" placeholder="Amount" />
+      <input id="descInput" placeholder="Description" />
+      <input id="dateInput" type="date" />
       <button id="submitButton" onclick="submitExpense()">Add Expense</button>
     </div>
 
@@ -29,13 +32,15 @@
     // Load all expenses
     function getExpenses() {
       fetch(api)
-        .then(res => res.json())
-        .then(data => {
+        .then((res) => res.json())
+        .then((data) => {
           var list = document.getElementById("expenseList");
           list.innerHTML = "";
 
-          data.forEach(exp => {
-            const formattedDate = new Date(exp.date).toISOString().split("T")[0];
+          data.forEach((exp) => {
+            const formattedDate = new Date(exp.date)
+              .toISOString()
+              .split("T")[0];
 
             var li = document.createElement("li");
 
@@ -64,25 +69,29 @@
       var date = document.getElementById("dateInput").value;
 
       if (!category || !amount || !date) {
-        alert("Please fill all required fields.");
+        Swal.fire("Missing Fields", "Please fill all required fields.", "warning");
         return;
       }
 
       if (editingId) {
+        // Update existing expense
         fetch(api + "/" + editingId, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ category, amount, description, date })
+          body: JSON.stringify({ category, amount, description, date }),
         }).then(() => {
+          Swal.fire("Updated!", "Expense updated successfully.", "success");
           getExpenses();
           clearForm();
         });
       } else {
+        // Add new expense
         fetch(api, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ category, amount, description, date })
+          body: JSON.stringify({ category, amount, description, date }),
         }).then(() => {
+          Swal.fire("Added!", "New expense added.", "success");
           getExpenses();
           clearForm();
         });
@@ -92,8 +101,8 @@
     // Load selected expense into the form
     function editExpense(id) {
       fetch(api + "/" + id)
-        .then(res => res.json())
-        .then(exp => {
+        .then((res) => res.json())
+        .then((exp) => {
           document.getElementById("categoryInput").value = exp.category;
           document.getElementById("amountInput").value = exp.amount;
           document.getElementById("descInput").value = exp.description;
@@ -106,11 +115,24 @@
         });
     }
 
-    // Delete expense
+    // Delete with SweetAlert2
     function deleteExpense(id) {
-      if (confirm("Delete this expense?")) {
-        fetch(api + "/" + id, { method: "DELETE" }).then(() => getExpenses());
-      }
+      Swal.fire({
+        title: "Are you sure?",
+        text: "This expense will be permanently deleted.",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        cancelButtonColor: "#3085d6",
+        confirmButtonText: "Yes, delete it!",
+      }).then((result) => {
+        if (result.isConfirmed) {
+          fetch(api + "/" + id, { method: "DELETE" }).then(() => {
+            Swal.fire("Deleted!", "The expense has been removed.", "success");
+            getExpenses();
+          });
+        }
+      });
     }
 
     // Reset form
