@@ -127,6 +127,23 @@ li {
   margin-top: 10px;
 }
 
+/* ------------------------ Monthly History Table ------------------------ */
+#historyTable {
+  width: 100%;
+  margin-top: 20px;
+  border-collapse: collapse;
+  text-align: center;
+}
+
+#historyTable th, #historyTable td {
+  padding: 8px;
+  border: 1px solid #ccc;
+}
+
+#historyTable th {
+  background-color: #f0f8ff;
+}
+
 /* ------------------------ Responsive ------------------------ */
 @media screen and (max-width: 650px) {
   .container {

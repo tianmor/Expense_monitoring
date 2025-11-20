@@ -5,155 +5,6 @@
   <title>Expense Monitoring System</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-
-  <style>
-    /* ------------------------ Base Styles ------------------------ */
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f6f7fb;
-      color: #333;
-    }
-
-    .container {
-      width: 600px;
-      margin: 40px auto;
-      background: white;
-      padding: 20px 30px;
-      border-radius: 10px;
-      box-shadow: 0 0 15px rgba(0,0,0,0.1);
-    }
-
-    h1, h3 {
-      text-align: center;
-    }
-
-    input, button {
-      padding: 8px;
-      margin: 5px 0;
-      border: 1px solid #ccc;
-      border-radius: 5px;
-      font-size: 14px;
-    }
-
-    button {
-      background: #4CAF50;
-      color: white;
-      cursor: pointer;
-      transition: 0.3s;
-    }
-
-    button:hover {
-      background: #45a049;
-    }
-
-    ul {
-      list-style-type: none;
-      padding: 0;
-    }
-
-    li {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      background: #f9f9f9;
-      margin: 8px 0;
-      padding: 10px;
-      border-radius: 6px;
-    }
-
-    .actions button {
-      margin-left: 10px;
-      padding: 5px 10px;
-      font-size: 12px;
-    }
-
-    .update {
-      background: #008CBA;
-    }
-
-    .update:hover {
-      background: #0079a5;
-    }
-
-    .delete {
-      background: #ff5c5c;
-    }
-
-    .delete:hover {
-      background: #e14d4d;
-    }
-
-    /* ------------------------ Budget Section ------------------------ */
-    .budget {
-      background-color: #f0f8ff;
-      padding: 15px 20px;
-      border-radius: 10px;
-      margin-bottom: 25px;
-      box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
-    }
-
-    .budget input {
-      width: 100%;
-      box-sizing: border-box;
-    }
-
-    .budget p {
-      font-weight: bold;
-      margin: 10px 0 5px;
-    }
-
-    .progress-container {
-      width: 100%;
-      background-color: #e0e0e0;
-      border-radius: 10px;
-      overflow: hidden;
-      height: 25px;
-      margin-top: 5px;
-    }
-
-    #budgetProgress {
-      width: 0%;
-      height: 100%;
-      text-align: center;
-      color: white;
-      line-height: 25px;
-      font-weight: bold;
-      transition: width 0.3s ease;
-      border-radius: 10px 0 0 10px;
-    }
-
-    /* Form styling */
-    .form input {
-      width: calc(100% - 16px);
-      box-sizing: border-box;
-    }
-
-    .form button {
-      width: 100%;
-      margin-top: 10px;
-    }
-
-    @media screen and (max-width: 650px) {
-      .container {
-        width: 90%;
-        padding: 15px;
-      }
-
-      li {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-
-      .actions {
-        margin-top: 10px;
-      }
-
-      .actions button {
-        margin-left: 0;
-        margin-right: 10px;
-      }
-    }
-  </style>
 </head>
 <body>
   <div class="container">
@@ -181,24 +32,37 @@
 
     <h3>Expenses List</h3>
     <ul id="expenseList"></ul>
+
+    <!-- Monthly History Section -->
+    <h3>📊 Monthly History</h3>
+    <table id="historyTable" border="1" cellspacing="0" cellpadding="5">
+      <thead>
+        <tr>
+          <th>Month</th>
+          <th>Budget (₱)</th>
+          <th>Spent (₱)</th>
+          <th>Remaining (₱)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- Rows inserted dynamically -->
+      </tbody>
+    </table>
   </div>
 
   <script>
     const api = "http://localhost:3000/expenses";
     let editingId = null;
 
-    // Get current month key in YYYY-MM format
     function getCurrentMonthKey() {
       const now = new Date();
       return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
 
-    // Load budget for the current month
     let monthKey = getCurrentMonthKey();
     let totalBudget = parseFloat(localStorage.getItem(`budget-${monthKey}`)) || 0;
     document.getElementById("budgetInput").value = totalBudget;
 
-    // Check for automatic monthly reset
     function checkMonthlyReset() {
       const lastMonthKey = localStorage.getItem("lastMonthKey");
       if (lastMonthKey && lastMonthKey !== monthKey) {
@@ -213,15 +77,14 @@
       localStorage.setItem("lastMonthKey", monthKey);
     }
 
-    // Update budget anytime
     document.getElementById("budgetInput").addEventListener("input", (e) => {
       totalBudget = parseFloat(e.target.value) || 0;
       localStorage.setItem(`budget-${monthKey}`, totalBudget);
       updateRemainingBalance();
       updateProgressBar();
+      loadMonthlyHistory();
     });
 
-    // Fetch expenses
     async function getExpenses() {
       const res = await fetch(api);
       const data = await res.json();
@@ -246,9 +109,9 @@
 
       updateRemainingBalance();
       updateProgressBar();
+      loadMonthlyHistory();
     }
 
-    // Submit expense (Add/Update)
     async function submitExpense() {
       const category = document.getElementById("categoryInput").value.trim();
       const amount = parseFloat(document.getElementById("amountInput").value.trim());
@@ -284,7 +147,6 @@
       getExpenses();
     }
 
-    // Edit expense
     async function editExpense(id) {
       const exp = await fetch(`${api}/${id}`).then(res => res.json());
       document.getElementById("categoryInput").value = exp.category;
@@ -295,7 +157,6 @@
       document.getElementById("submitButton").innerText = "Update Expense";
     }
 
-    // Delete expense
     function deleteExpense(id) {
       Swal.fire({
         title: "Are you sure?",
@@ -315,7 +176,6 @@
       });
     }
 
-    // Clear form
     function clearForm() {
       document.getElementById("categoryInput").value = "";
       document.getElementById("amountInput").value = "";
@@ -325,7 +185,6 @@
       document.getElementById("submitButton").innerText = "Add Expense";
     }
 
-    // Calculate remaining balance
     async function updateRemainingBalance() {
       const expenses = await fetch(api).then(res => res.json());
       const spent = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
@@ -333,10 +192,9 @@
 
       const remainingElem = document.getElementById("remainingBalance");
       remainingElem.innerText = remaining.toFixed(2);
-      remainingElem.style.color = remaining < 0 ? "#ff5c5c" : "#333"; // red if over budget
+      remainingElem.style.color = remaining < 0 ? "#ff5c5c" : "#333";
     }
 
-    // Update progress bar
     async function updateProgressBar() {
       const expenses = await fetch(api).then(res => res.json());
       const spent = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
@@ -347,21 +205,42 @@
       bar.innerText = `${Math.round(percent)}%`;
 
       if (percent < 80) {
-        bar.style.backgroundColor = "#4caf50"; // green
+        bar.style.backgroundColor = "#4caf50";
       } else if (percent >= 80 && percent <= 100) {
-        bar.style.backgroundColor = "#ffa500"; // orange
+        bar.style.backgroundColor = "#ffa500";
       } else {
-        bar.style.backgroundColor = "#ff5c5c"; // red
+        bar.style.backgroundColor = "#ff5c5c";
       }
     }
 
-    // Get total spent (used for saving history)
     async function getTotalSpent() {
       const expenses = await fetch(api).then(res => res.json());
       return expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
     }
 
-    // Initialize app
+    function loadMonthlyHistory() {
+      const tbody = document.querySelector("#historyTable tbody");
+      tbody.innerHTML = "";
+
+      const keys = Object.keys(localStorage)
+        .filter(k => k.startsWith("history-"))
+        .sort();
+
+      keys.forEach(key => {
+        const monthData = JSON.parse(localStorage.getItem(key));
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+          <td>${key.replace("history-", "")}</td>
+          <td>₱${monthData.budget.toFixed(2)}</td>
+          <td>₱${monthData.spent.toFixed(2)}</td>
+          <td style="color:${monthData.remaining < 0 ? '#ff5c5c':'#333'}">₱${monthData.remaining.toFixed(2)}</td>
+        `;
+        tbody.appendChild(row);
+      });
+    }
+
+    // Initialize App
     checkMonthlyReset();
     getExpenses();
   </script>
