@@ -24,24 +24,33 @@
 
   <script>
     var api = "http://localhost:3000/expenses";
-    var editingId = null; // track which expense is being edited
+    var editingId = null;
 
-    // Get all expenses
+    // Load all expenses
     function getExpenses() {
       fetch(api)
         .then(res => res.json())
         .then(data => {
           var list = document.getElementById("expenseList");
           list.innerHTML = "";
+
           data.forEach(exp => {
-            var li = document.createElement("li");
             const formattedDate = new Date(exp.date).toISOString().split("T")[0];
+
+            var li = document.createElement("li");
+
             li.innerHTML = `
-              <strong>${exp.category}</strong> - ₱${exp.amount} 
-              <em>(${formattedDate})</em> : ${exp.description}
-              <button onclick="editExpense(${exp.id})">Update</button>
-              <button onclick="deleteExpense(${exp.id})">Delete</button>
+              <span>
+                <strong>${exp.category}</strong> - ₱${exp.amount}
+                <em>(${formattedDate})</em> : ${exp.description}
+              </span>
+
+              <div class="actions">
+                <button class="update" onclick="editExpense(${exp.id})">Update</button>
+                <button class="delete" onclick="deleteExpense(${exp.id})">Delete</button>
+              </div>
             `;
+
             list.appendChild(li);
           });
         });
@@ -60,7 +69,6 @@
       }
 
       if (editingId) {
-        // Update existing expense
         fetch(api + "/" + editingId, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -70,7 +78,6 @@
           clearForm();
         });
       } else {
-        // Add new expense
         fetch(api, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -82,7 +89,7 @@
       }
     }
 
-    // Pre-fill the Add Expense form for editing
+    // Load selected expense into the form
     function editExpense(id) {
       fetch(api + "/" + id)
         .then(res => res.json())
@@ -90,7 +97,9 @@
           document.getElementById("categoryInput").value = exp.category;
           document.getElementById("amountInput").value = exp.amount;
           document.getElementById("descInput").value = exp.description;
-          document.getElementById("dateInput").value = new Date(exp.date).toISOString().split("T")[0];
+          document.getElementById("dateInput").value = new Date(exp.date)
+            .toISOString()
+            .split("T")[0];
 
           editingId = id;
           document.getElementById("submitButton").innerText = "Update Expense";
@@ -100,12 +109,11 @@
     // Delete expense
     function deleteExpense(id) {
       if (confirm("Delete this expense?")) {
-        fetch(api + "/" + id, { method: "DELETE" })
-          .then(() => getExpenses());
+        fetch(api + "/" + id, { method: "DELETE" }).then(() => getExpenses());
       }
     }
 
-    // Clear form and reset state
+    // Reset form
     function clearForm() {
       document.getElementById("categoryInput").value = "";
       document.getElementById("amountInput").value = "";
@@ -115,7 +123,6 @@
       document.getElementById("submitButton").innerText = "Add Expense";
     }
 
-    // Initialize
     getExpenses();
   </script>
 </body>

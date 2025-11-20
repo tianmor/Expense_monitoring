@@ -35,18 +35,34 @@ ul {
   padding: 0;
 }
 
+/* 🆕 Flex layout for each expense row */
 li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   background: #f9f9f9;
   margin: 8px 0;
   padding: 10px;
   border-radius: 6px;
 }
 
-li button {
+/* Action button container on the right */
+.actions button {
   margin-left: 10px;
+}
+
+.update {
+  background: #008CBA;
+}
+
+.update:hover {
+  background: #0079a5;
+}
+
+.delete {
   background: #ff5c5c;
 }
 
-li button:first-of-type {
-  background: #008CBA;
+.delete:hover {
+  background: #e14d4d;
 }
