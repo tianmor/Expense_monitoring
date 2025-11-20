@@ -3,7 +3,7 @@ var express = require('express');
 var bodyParser = require('body-parser');
 var mysql = require('mysql2');
 var cors = require('cors');
-var path = require('path');   // <-- added this
+var path = require('path');   // for serving frontend
 var app = express();
 
 var port = process.env.PORT || 3000;
@@ -55,6 +55,16 @@ app.get('/expenses', function(req, res) {
   db.query("SELECT * FROM expenses ORDER BY date DESC", function(err, results) {
     if (err) return res.status(500).json({ message: "Error fetching expenses", error: err });
     res.json(results);
+  });
+});
+
+// READ - Get a single expense by ID
+app.get('/expenses/:id', function(req, res) {
+  const id = req.params.id;
+  db.query("SELECT * FROM expenses WHERE id = ?", [id], function(err, results) {
+    if (err) return res.status(500).json({ message: "Error fetching expense", error: err });
+    if (results.length === 0) return res.status(404).json({ message: "Expense not found" });
+    res.json(results[0]);
   });
 });
 

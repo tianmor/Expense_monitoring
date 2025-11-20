@@ -15,7 +15,7 @@
       <input id="amountInput" type="number" placeholder="Amount">
       <input id="descInput" placeholder="Description">
       <input id="dateInput" type="date">
-      <button onclick="addExpense()">Add Expense</button>
+      <button id="submitButton" onclick="submitExpense()">Add Expense</button>
     </div>
 
     <h3>Expenses List</h3>
@@ -24,6 +24,7 @@
 
   <script>
     var api = "http://localhost:3000/expenses";
+    var editingId = null; // track which expense is being edited
 
     // Get all expenses
     function getExpenses() {
@@ -38,28 +39,16 @@
             li.innerHTML = `
               <strong>${exp.category}</strong> - ₱${exp.amount} 
               <em>(${formattedDate})</em> : ${exp.description}
+              <button onclick="editExpense(${exp.id})">Update</button>
+              <button onclick="deleteExpense(${exp.id})">Delete</button>
             `;
-
-
-            // Update button
-            var updateBtn = document.createElement("button");
-            updateBtn.innerText = "Update";
-            updateBtn.onclick = function() { updateExpense(exp.id); };
-            li.appendChild(updateBtn);
-
-            // Delete button
-            var deleteBtn = document.createElement("button");
-            deleteBtn.innerText = "Delete";
-            deleteBtn.onclick = function() { deleteExpense(exp.id); };
-            li.appendChild(deleteBtn);
-
             list.appendChild(li);
           });
         });
     }
 
-    // Add expense
-    function addExpense() {
+    // Add or update expense
+    function submitExpense() {
       var category = document.getElementById("categoryInput").value.trim();
       var amount = document.getElementById("amountInput").value.trim();
       var description = document.getElementById("descInput").value.trim();
@@ -70,38 +59,42 @@
         return;
       }
 
-      fetch(api, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category, amount, description, date })
-      }).then(() => {
-        getExpenses();
-        document.getElementById("categoryInput").value = "";
-        document.getElementById("amountInput").value = "";
-        document.getElementById("descInput").value = "";
-        document.getElementById("dateInput").value = "";
-      });
+      if (editingId) {
+        // Update existing expense
+        fetch(api + "/" + editingId, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ category, amount, description, date })
+        }).then(() => {
+          getExpenses();
+          clearForm();
+        });
+      } else {
+        // Add new expense
+        fetch(api, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ category, amount, description, date })
+        }).then(() => {
+          getExpenses();
+          clearForm();
+        });
+      }
     }
 
-    // Update expense
-    function updateExpense(id) {
-      var newCategory = prompt("Enter new category:");
-      var newAmount = prompt("Enter new amount:");
-      var newDesc = prompt("Enter new description:");
-      var newDate = prompt("Enter new date (YYYY-MM-DD):");
+    // Pre-fill the Add Expense form for editing
+    function editExpense(id) {
+      fetch(api + "/" + id)
+        .then(res => res.json())
+        .then(exp => {
+          document.getElementById("categoryInput").value = exp.category;
+          document.getElementById("amountInput").value = exp.amount;
+          document.getElementById("descInput").value = exp.description;
+          document.getElementById("dateInput").value = new Date(exp.date).toISOString().split("T")[0];
 
-      if (!newCategory || !newAmount || !newDate) return;
-
-      fetch(api + "/" + id, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          category: newCategory,
-          amount: newAmount,
-          description: newDesc,
-          date: newDate
-        })
-      }).then(() => getExpenses());
+          editingId = id;
+          document.getElementById("submitButton").innerText = "Update Expense";
+        });
     }
 
     // Delete expense
@@ -112,6 +105,17 @@
       }
     }
 
+    // Clear form and reset state
+    function clearForm() {
+      document.getElementById("categoryInput").value = "";
+      document.getElementById("amountInput").value = "";
+      document.getElementById("descInput").value = "";
+      document.getElementById("dateInput").value = "";
+      editingId = null;
+      document.getElementById("submitButton").innerText = "Add Expense";
+    }
+
+    // Initialize
     getExpenses();
   </script>
 </body>
