@@ -4,32 +4,154 @@
   <meta charset="UTF-8" />
   <title>Expense Monitoring System</title>
   <link rel="stylesheet" href="style.css" />
-
-  <!-- SweetAlert2 CDN -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
   <style>
-    /* Added budget section & progress bar styling */
+    /* ------------------------ Base Styles ------------------------ */
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f6f7fb;
+      color: #333;
+    }
+
+    .container {
+      width: 600px;
+      margin: 40px auto;
+      background: white;
+      padding: 20px 30px;
+      border-radius: 10px;
+      box-shadow: 0 0 15px rgba(0,0,0,0.1);
+    }
+
+    h1, h3 {
+      text-align: center;
+    }
+
+    input, button {
+      padding: 8px;
+      margin: 5px 0;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+
+    button {
+      background: #4CAF50;
+      color: white;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    button:hover {
+      background: #45a049;
+    }
+
+    ul {
+      list-style-type: none;
+      padding: 0;
+    }
+
+    li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #f9f9f9;
+      margin: 8px 0;
+      padding: 10px;
+      border-radius: 6px;
+    }
+
+    .actions button {
+      margin-left: 10px;
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+
+    .update {
+      background: #008CBA;
+    }
+
+    .update:hover {
+      background: #0079a5;
+    }
+
+    .delete {
+      background: #ff5c5c;
+    }
+
+    .delete:hover {
+      background: #e14d4d;
+    }
+
+    /* ------------------------ Budget Section ------------------------ */
     .budget {
-      margin-bottom: 20px;
+      background-color: #f0f8ff;
+      padding: 15px 20px;
+      border-radius: 10px;
+      margin-bottom: 25px;
+      box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
+    }
+
+    .budget input {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .budget p {
+      font-weight: bold;
+      margin: 10px 0 5px;
     }
 
     .progress-container {
       width: 100%;
-      background-color: #f1f1f1;
+      background-color: #e0e0e0;
       border-radius: 10px;
+      overflow: hidden;
+      height: 25px;
       margin-top: 5px;
     }
 
     #budgetProgress {
       width: 0%;
-      height: 20px;
-      background-color: #4caf50;
-      border-radius: 10px;
+      height: 100%;
       text-align: center;
       color: white;
-      font-size: 12px;
-      line-height: 20px;
+      line-height: 25px;
+      font-weight: bold;
+      transition: width 0.3s ease;
+      border-radius: 10px 0 0 10px;
+    }
+
+    /* Form styling */
+    .form input {
+      width: calc(100% - 16px);
+      box-sizing: border-box;
+    }
+
+    .form button {
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    @media screen and (max-width: 650px) {
+      .container {
+        width: 90%;
+        padding: 15px;
+      }
+
+      li {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .actions {
+        margin-top: 10px;
+      }
+
+      .actions button {
+        margin-left: 0;
+        margin-right: 10px;
+      }
     }
   </style>
 </head>
@@ -39,8 +161,8 @@
 
     <!-- Budget Section -->
     <div class="budget">
-      <h3>💵 Total Budget</h3>
-      <input id="budgetInput" type="number" placeholder="Enter your total budget" />
+      <h3>💵 Total Monthly Budget</h3>
+      <input id="budgetInput" type="number" placeholder="Enter your total monthly budget" />
       <p>Remaining Balance: ₱<span id="remainingBalance">0</span></p>
       <div class="progress-container">
         <div id="budgetProgress">0%</div>
@@ -64,49 +186,70 @@
   <script>
     const api = "http://localhost:3000/expenses";
     let editingId = null;
-    let totalBudget = parseFloat(localStorage.getItem("totalBudget")) || 0;
 
-    document.getElementById("budgetInput").value = totalBudget;
-
-    // Update total budget input
-    document.getElementById("budgetInput").addEventListener("input", (e) => {
-      totalBudget = parseFloat(e.target.value) || 0;
-      localStorage.setItem("totalBudget", totalBudget);
-      updateRemainingBalance();
-    });
-
-    // Fetch and display expenses
-    function getExpenses() {
-      fetch(api)
-        .then(res => res.json())
-        .then(data => {
-          const list = document.getElementById("expenseList");
-          list.innerHTML = "";
-
-          data.forEach(exp => {
-            const formattedDate = new Date(exp.date).toISOString().split("T")[0];
-
-            const li = document.createElement("li");
-            li.innerHTML = `
-              <span>
-                <strong>${exp.category}</strong> - ₱${exp.amount}
-                <em>(${formattedDate})</em> : ${exp.description}
-              </span>
-              <div class="actions">
-                <button class="update" onclick="editExpense(${exp.id})">Update</button>
-                <button class="delete" onclick="deleteExpense(${exp.id})">Delete</button>
-              </div>
-            `;
-            list.appendChild(li);
-          });
-
-          updateRemainingBalance();
-          updateProgressBar();
-        });
+    // Get current month key in YYYY-MM format
+    function getCurrentMonthKey() {
+      const now = new Date();
+      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     }
 
-    // Add or update expense
-    function submitExpense() {
+    // Load budget for the current month
+    let monthKey = getCurrentMonthKey();
+    let totalBudget = parseFloat(localStorage.getItem(`budget-${monthKey}`)) || 0;
+    document.getElementById("budgetInput").value = totalBudget;
+
+    // Check for automatic monthly reset
+    function checkMonthlyReset() {
+      const lastMonthKey = localStorage.getItem("lastMonthKey");
+      if (lastMonthKey && lastMonthKey !== monthKey) {
+        getTotalSpent().then(spent => {
+          localStorage.setItem(`history-${lastMonthKey}`, JSON.stringify({
+            budget: parseFloat(localStorage.getItem(`budget-${lastMonthKey}`)) || 0,
+            spent: spent,
+            remaining: (parseFloat(localStorage.getItem(`budget-${lastMonthKey}`)) || 0) - spent
+          }));
+        });
+      }
+      localStorage.setItem("lastMonthKey", monthKey);
+    }
+
+    // Update budget anytime
+    document.getElementById("budgetInput").addEventListener("input", (e) => {
+      totalBudget = parseFloat(e.target.value) || 0;
+      localStorage.setItem(`budget-${monthKey}`, totalBudget);
+      updateRemainingBalance();
+      updateProgressBar();
+    });
+
+    // Fetch expenses
+    async function getExpenses() {
+      const res = await fetch(api);
+      const data = await res.json();
+      const list = document.getElementById("expenseList");
+      list.innerHTML = "";
+
+      data.forEach(exp => {
+        const formattedDate = new Date(exp.date).toISOString().split("T")[0];
+        const li = document.createElement("li");
+        li.innerHTML = `
+          <span>
+            <strong>${exp.category}</strong> - ₱${exp.amount}
+            <em>(${formattedDate})</em> : ${exp.description}
+          </span>
+          <div class="actions">
+            <button class="update" onclick="editExpense(${exp.id})">Update</button>
+            <button class="delete" onclick="deleteExpense(${exp.id})">Delete</button>
+          </div>
+        `;
+        list.appendChild(li);
+      });
+
+      updateRemainingBalance();
+      updateProgressBar();
+    }
+
+    // Submit expense (Add/Update)
+    async function submitExpense() {
       const category = document.getElementById("categoryInput").value.trim();
       const amount = parseFloat(document.getElementById("amountInput").value.trim());
       const description = document.getElementById("descInput").value.trim();
@@ -117,50 +260,39 @@
         return;
       }
 
-      // Check budget
-      fetch(api)
-        .then(res => res.json())
-        .then(data => {
-          const spent = data.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
-          const remaining = totalBudget - spent;
+      const expenses = await fetch(api).then(res => res.json());
+      const spent = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+      const remaining = totalBudget - spent;
 
-          
+      if (!editingId && amount > remaining) {
+        Swal.fire("Budget Exceeded", "This expense exceeds your remaining funds.", "error");
+        return;
+      }
 
+      const method = editingId ? "PUT" : "POST";
+      const url = editingId ? `${api}/${editingId}` : api;
 
-          if (!editingId && amount > remaining) {
-            Swal.fire("Budget Exceeded", "This expense exceeds your remaining funds.", "error");
-            return;
-          }
+      await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, amount, description, date })
+      });
 
-          const method = editingId ? "PUT" : "POST";
-          const url = editingId ? `${api}/${editingId}` : api;
-
-          fetch(url, {
-            method,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ category, amount, description, date })
-          }).then(() => {
-            Swal.fire(editingId ? "Updated!" : "Added!", `Expense ${editingId ? "updated" : "added"} successfully.`, "success");
-            editingId = null;
-            clearForm();
-            getExpenses();
-          });
-        });
+      Swal.fire(editingId ? "Updated!" : "Added!", `Expense ${editingId ? "updated" : "added"} successfully.`, "success");
+      editingId = null;
+      clearForm();
+      getExpenses();
     }
 
-    // Load expense into form for editing
-    function editExpense(id) {
-      fetch(`${api}/${id}`)
-        .then(res => res.json())
-        .then(exp => {
-          document.getElementById("categoryInput").value = exp.category;
-          document.getElementById("amountInput").value = exp.amount;
-          document.getElementById("descInput").value = exp.description;
-          document.getElementById("dateInput").value = new Date(exp.date).toISOString().split("T")[0];
-
-          editingId = id;
-          document.getElementById("submitButton").innerText = "Update Expense";
-        });
+    // Edit expense
+    async function editExpense(id) {
+      const exp = await fetch(`${api}/${id}`).then(res => res.json());
+      document.getElementById("categoryInput").value = exp.category;
+      document.getElementById("amountInput").value = exp.amount;
+      document.getElementById("descInput").value = exp.description;
+      document.getElementById("dateInput").value = new Date(exp.date).toISOString().split("T")[0];
+      editingId = id;
+      document.getElementById("submitButton").innerText = "Update Expense";
     }
 
     // Delete expense
@@ -193,46 +325,44 @@
       document.getElementById("submitButton").innerText = "Add Expense";
     }
 
-    // Update remaining balance
-    function updateRemainingBalance() {
-      fetch(api)
-        .then(res => res.json())
-        .then(data => {
-          const spent = data.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
-          const remaining = totalBudget - spent;
+    // Calculate remaining balance
+    async function updateRemainingBalance() {
+      const expenses = await fetch(api).then(res => res.json());
+      const spent = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+      const remaining = totalBudget - spent;
 
-          const remainingElem = document.getElementById("remainingBalance");
-          remainingElem.innerText = remaining.toFixed(2);
-          remainingElem.style.color = remaining < 0 ? "#ff5c5c" : "#333"; // red if over budget
-        });
+      const remainingElem = document.getElementById("remainingBalance");
+      remainingElem.innerText = remaining.toFixed(2);
+      remainingElem.style.color = remaining < 0 ? "#ff5c5c" : "#333"; // red if over budget
     }
 
+    // Update progress bar
+    async function updateProgressBar() {
+      const expenses = await fetch(api).then(res => res.json());
+      const spent = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+      const percent = totalBudget ? (spent / totalBudget) * 100 : 0;
 
-    // Update budget progress bar
-    function updateProgressBar() {
-      fetch(api)
-        .then(res => res.json())
-        .then(data => {
-          const spent = data.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
-          const percent = totalBudget ? (spent / totalBudget) * 100 : 0;
+      const bar = document.getElementById("budgetProgress");
+      bar.style.width = Math.min(percent, 100) + "%";
+      bar.innerText = `${Math.round(percent)}%`;
 
-          const bar = document.getElementById("budgetProgress");
-          bar.style.width = Math.min(percent, 100) + "%";
-          bar.innerText = `${Math.round(percent)}%`;
-
-          // Change color based on usage
-          if (percent < 80) {
-            bar.style.backgroundColor = "#4caf50"; // green
-          } else if (percent >= 80 && percent <= 100) {
-            bar.style.backgroundColor = "#ffa500"; // orange
-          } else {
-            bar.style.backgroundColor = "#ff5c5c"; // red
-          }
-        });
+      if (percent < 80) {
+        bar.style.backgroundColor = "#4caf50"; // green
+      } else if (percent >= 80 && percent <= 100) {
+        bar.style.backgroundColor = "#ffa500"; // orange
+      } else {
+        bar.style.backgroundColor = "#ff5c5c"; // red
+      }
     }
 
+    // Get total spent (used for saving history)
+    async function getTotalSpent() {
+      const expenses = await fetch(api).then(res => res.json());
+      return expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+    }
 
-    // Initialize
+    // Initialize app
+    checkMonthlyReset();
     getExpenses();
   </script>
 </body>
