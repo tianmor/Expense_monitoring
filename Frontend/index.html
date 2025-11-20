@@ -7,11 +7,47 @@
 
   <!-- SweetAlert2 CDN -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <style>
+    /* Added budget section & progress bar styling */
+    .budget {
+      margin-bottom: 20px;
+    }
+
+    .progress-container {
+      width: 100%;
+      background-color: #f1f1f1;
+      border-radius: 10px;
+      margin-top: 5px;
+    }
+
+    #budgetProgress {
+      width: 0%;
+      height: 20px;
+      background-color: #4caf50;
+      border-radius: 10px;
+      text-align: center;
+      color: white;
+      font-size: 12px;
+      line-height: 20px;
+    }
+  </style>
 </head>
 <body>
   <div class="container">
     <h1>💰 Expense Monitoring System</h1>
 
+    <!-- Budget Section -->
+    <div class="budget">
+      <h3>💵 Total Budget</h3>
+      <input id="budgetInput" type="number" placeholder="Enter your total budget" />
+      <p>Remaining Balance: ₱<span id="remainingBalance">0</span></p>
+      <div class="progress-container">
+        <div id="budgetProgress">0%</div>
+      </div>
+    </div>
+
+    <!-- Add/Edit Expense Form -->
     <div class="form">
       <h3>Add Expense</h3>
       <input id="categoryInput" placeholder="Category (e.g. Food)" />
@@ -26,96 +62,105 @@
   </div>
 
   <script>
-    var api = "http://localhost:3000/expenses";
-    var editingId = null;
+    const api = "http://localhost:3000/expenses";
+    let editingId = null;
+    let totalBudget = parseFloat(localStorage.getItem("totalBudget")) || 0;
 
-    // Load all expenses
+    document.getElementById("budgetInput").value = totalBudget;
+
+    // Update total budget input
+    document.getElementById("budgetInput").addEventListener("input", (e) => {
+      totalBudget = parseFloat(e.target.value) || 0;
+      localStorage.setItem("totalBudget", totalBudget);
+      updateRemainingBalance();
+    });
+
+    // Fetch and display expenses
     function getExpenses() {
       fetch(api)
-        .then((res) => res.json())
-        .then((data) => {
-          var list = document.getElementById("expenseList");
+        .then(res => res.json())
+        .then(data => {
+          const list = document.getElementById("expenseList");
           list.innerHTML = "";
 
-          data.forEach((exp) => {
-            const formattedDate = new Date(exp.date)
-              .toISOString()
-              .split("T")[0];
+          data.forEach(exp => {
+            const formattedDate = new Date(exp.date).toISOString().split("T")[0];
 
-            var li = document.createElement("li");
-
+            const li = document.createElement("li");
             li.innerHTML = `
               <span>
                 <strong>${exp.category}</strong> - ₱${exp.amount}
                 <em>(${formattedDate})</em> : ${exp.description}
               </span>
-
               <div class="actions">
                 <button class="update" onclick="editExpense(${exp.id})">Update</button>
                 <button class="delete" onclick="deleteExpense(${exp.id})">Delete</button>
               </div>
             `;
-
             list.appendChild(li);
           });
+
+          updateRemainingBalance();
+          updateProgressBar();
         });
     }
 
     // Add or update expense
     function submitExpense() {
-      var category = document.getElementById("categoryInput").value.trim();
-      var amount = document.getElementById("amountInput").value.trim();
-      var description = document.getElementById("descInput").value.trim();
-      var date = document.getElementById("dateInput").value;
+      const category = document.getElementById("categoryInput").value.trim();
+      const amount = parseFloat(document.getElementById("amountInput").value.trim());
+      const description = document.getElementById("descInput").value.trim();
+      const date = document.getElementById("dateInput").value;
 
       if (!category || !amount || !date) {
         Swal.fire("Missing Fields", "Please fill all required fields.", "warning");
         return;
       }
 
-      if (editingId) {
-        // Update existing expense
-        fetch(api + "/" + editingId, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ category, amount, description, date }),
-        }).then(() => {
-          Swal.fire("Updated!", "Expense updated successfully.", "success");
-          getExpenses();
-          clearForm();
+      // Check budget
+      fetch(api)
+        .then(res => res.json())
+        .then(data => {
+          const spent = data.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+          const remaining = totalBudget - spent;
+
+          if (!editingId && amount > remaining) {
+            Swal.fire("Budget Exceeded", "This expense exceeds your remaining funds.", "error");
+            return;
+          }
+
+          const method = editingId ? "PUT" : "POST";
+          const url = editingId ? `${api}/${editingId}` : api;
+
+          fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ category, amount, description, date })
+          }).then(() => {
+            Swal.fire(editingId ? "Updated!" : "Added!", `Expense ${editingId ? "updated" : "added"} successfully.`, "success");
+            editingId = null;
+            clearForm();
+            getExpenses();
+          });
         });
-      } else {
-        // Add new expense
-        fetch(api, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ category, amount, description, date }),
-        }).then(() => {
-          Swal.fire("Added!", "New expense added.", "success");
-          getExpenses();
-          clearForm();
-        });
-      }
     }
 
-    // Load selected expense into the form
+    // Load expense into form for editing
     function editExpense(id) {
-      fetch(api + "/" + id)
-        .then((res) => res.json())
-        .then((exp) => {
+      fetch(`${api}/${id}`)
+        .then(res => res.json())
+        .then(exp => {
           document.getElementById("categoryInput").value = exp.category;
           document.getElementById("amountInput").value = exp.amount;
           document.getElementById("descInput").value = exp.description;
-          document.getElementById("dateInput").value = new Date(exp.date)
-            .toISOString()
-            .split("T")[0];
+          document.getElementById("dateInput").value = new Date(exp.date).toISOString().split("T")[0];
 
           editingId = id;
           document.getElementById("submitButton").innerText = "Update Expense";
         });
     }
 
-    // Delete with SweetAlert2
+    // Delete expense
     function deleteExpense(id) {
       Swal.fire({
         title: "Are you sure?",
@@ -124,10 +169,10 @@
         showCancelButton: true,
         confirmButtonColor: "#d33",
         cancelButtonColor: "#3085d6",
-        confirmButtonText: "Yes, delete it!",
-      }).then((result) => {
+        confirmButtonText: "Yes, delete it!"
+      }).then(result => {
         if (result.isConfirmed) {
-          fetch(api + "/" + id, { method: "DELETE" }).then(() => {
+          fetch(`${api}/${id}`, { method: "DELETE" }).then(() => {
             Swal.fire("Deleted!", "The expense has been removed.", "success");
             getExpenses();
           });
@@ -135,7 +180,7 @@
       });
     }
 
-    // Reset form
+    // Clear form
     function clearForm() {
       document.getElementById("categoryInput").value = "";
       document.getElementById("amountInput").value = "";
@@ -145,6 +190,31 @@
       document.getElementById("submitButton").innerText = "Add Expense";
     }
 
+    // Update remaining balance
+    function updateRemainingBalance() {
+      fetch(api)
+        .then(res => res.json())
+        .then(data => {
+          const spent = data.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+          const remaining = totalBudget - spent;
+          document.getElementById("remainingBalance").innerText = remaining.toFixed(2);
+        });
+    }
+
+    // Update budget progress bar
+    function updateProgressBar() {
+      fetch(api)
+        .then(res => res.json())
+        .then(data => {
+          const spent = data.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
+          const percent = totalBudget ? Math.min((spent / totalBudget) * 100, 100) : 0;
+          const bar = document.getElementById("budgetProgress");
+          bar.style.width = percent + "%";
+          bar.innerText = `${Math.round(percent)}%`;
+        });
+    }
+
+    // Initialize
     getExpenses();
   </script>
 </body>

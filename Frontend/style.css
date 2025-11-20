@@ -1,3 +1,4 @@
+/* ------------------------ Base Styles ------------------------ */
 body {
   font-family: Arial, sans-serif;
   background-color: #f6f7fb;
@@ -10,20 +11,26 @@ body {
   background: white;
   padding: 20px 30px;
   border-radius: 10px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  box-shadow: 0 0 15px rgba(0,0,0,0.1);
+}
+
+h1, h3 {
+  text-align: center;
 }
 
 input, button {
   padding: 8px;
-  margin: 5px;
+  margin: 5px 0;
   border: 1px solid #ccc;
   border-radius: 5px;
+  font-size: 14px;
 }
 
 button {
   background: #4CAF50;
   color: white;
   cursor: pointer;
+  transition: 0.3s;
 }
 
 button:hover {
@@ -35,7 +42,7 @@ ul {
   padding: 0;
 }
 
-/* 🆕 Flex layout for each expense row */
+/* ------------------------ Expense List ------------------------ */
 li {
   display: flex;
   justify-content: space-between;
@@ -46,9 +53,10 @@ li {
   border-radius: 6px;
 }
 
-/* Action button container on the right */
 .actions button {
   margin-left: 10px;
+  padding: 5px 10px;
+  font-size: 12px;
 }
 
 .update {
@@ -65,4 +73,78 @@ li {
 
 .delete:hover {
   background: #e14d4d;
+}
+
+/* ------------------------ Budget Section ------------------------ */
+.budget {
+  background-color: #f0f8ff;
+  padding: 15px 20px;
+  border-radius: 10px;
+  margin-bottom: 25px;
+  box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
+}
+
+.budget input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.budget p {
+  font-weight: bold;
+  margin: 10px 0 5px;
+}
+
+/* ------------------------ Progress Bar ------------------------ */
+.progress-container {
+  width: 100%;
+  background-color: #e0e0e0;
+  border-radius: 10px;
+  overflow: hidden;
+  height: 25px;
+  margin-top: 5px;
+}
+
+#budgetProgress {
+  width: 0%;
+  height: 100%;
+  background-color: #4caf50;
+  text-align: center;
+  color: white;
+  line-height: 25px;
+  font-weight: bold;
+  transition: width 0.3s ease;
+  border-radius: 10px 0 0 10px;
+}
+
+/* ------------------------ Form Styling ------------------------ */
+.form input {
+  width: calc(100% - 16px);
+  box-sizing: border-box;
+}
+
+.form button {
+  width: 100%;
+  margin-top: 10px;
+}
+
+/* ------------------------ Responsive ------------------------ */
+@media screen and (max-width: 650px) {
+  .container {
+    width: 90%;
+    padding: 15px;
+  }
+
+  li {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .actions {
+    margin-top: 10px;
+  }
+
+  .actions button {
+    margin-left: 0;
+    margin-right: 10px;
+  }
 }
