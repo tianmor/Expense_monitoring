@@ -124,6 +124,9 @@
           const spent = data.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
           const remaining = totalBudget - spent;
 
+          
+
+
           if (!editingId && amount > remaining) {
             Swal.fire("Budget Exceeded", "This expense exceeds your remaining funds.", "error");
             return;
@@ -197,9 +200,13 @@
         .then(data => {
           const spent = data.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
           const remaining = totalBudget - spent;
-          document.getElementById("remainingBalance").innerText = remaining.toFixed(2);
+
+          const remainingElem = document.getElementById("remainingBalance");
+          remainingElem.innerText = remaining.toFixed(2);
+          remainingElem.style.color = remaining < 0 ? "#ff5c5c" : "#333"; // red if over budget
         });
     }
+
 
     // Update budget progress bar
     function updateProgressBar() {
@@ -207,12 +214,23 @@
         .then(res => res.json())
         .then(data => {
           const spent = data.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
-          const percent = totalBudget ? Math.min((spent / totalBudget) * 100, 100) : 0;
+          const percent = totalBudget ? (spent / totalBudget) * 100 : 0;
+
           const bar = document.getElementById("budgetProgress");
-          bar.style.width = percent + "%";
+          bar.style.width = Math.min(percent, 100) + "%";
           bar.innerText = `${Math.round(percent)}%`;
+
+          // Change color based on usage
+          if (percent < 80) {
+            bar.style.backgroundColor = "#4caf50"; // green
+          } else if (percent >= 80 && percent <= 100) {
+            bar.style.backgroundColor = "#ffa500"; // orange
+          } else {
+            bar.style.backgroundColor = "#ff5c5c"; // red
+          }
         });
     }
+
 
     // Initialize
     getExpenses();
