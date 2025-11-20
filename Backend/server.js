@@ -3,6 +3,7 @@ var express = require('express');
 var bodyParser = require('body-parser');
 var mysql = require('mysql2');
 var cors = require('cors');
+var path = require('path');   // <-- added this
 var app = express();
 
 var port = process.env.PORT || 3000;
@@ -11,6 +12,14 @@ var port = process.env.PORT || 3000;
 app.use(bodyParser.json());
 app.use(express.json());
 app.use(cors()); // allows requests from your frontend
+
+// ---------- Serve Frontend ----------
+app.use(express.static(path.join(__dirname, '../frontend')));
+
+// Default route → load index.html
+app.get('/', function(req, res) {
+  res.sendFile(path.join(__dirname, '../frontend/index.html'));
+});
 
 // MySQL Connection
 var db = mysql.createConnection({
