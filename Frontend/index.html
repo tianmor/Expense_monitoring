@@ -12,9 +12,9 @@
 
     <!-- Budget Section -->
     <div class="budget">
-      <h3>💵 Total Monthly Budget</h3>
-      <input id="budgetInput" type="number" placeholder="Enter your total monthly budget" />
-      <p>Remaining Balance: ₱<span id="remainingBalance">0</span></p>
+      <h3>💵 Monthly Budget</h3>
+      <input id="budgetInput" type="number" placeholder="Enter your monthly budget" />
+      <p>Remaining Balance: ₱<span id="remainingBalance">0.00</span></p>
       <div class="progress-container">
         <div id="budgetProgress">0%</div>
       </div>
@@ -22,7 +22,7 @@
 
     <!-- Add/Edit Expense Form -->
     <div class="form">
-      <h3>Add Expense</h3>
+      <h3 id="formTitle">Add Expense</h3>
       <input id="categoryInput" placeholder="Category (e.g. Food)" />
       <input id="amountInput" type="number" placeholder="Amount" />
       <input id="descInput" placeholder="Description" />
@@ -33,9 +33,8 @@
     <h3>Expenses List</h3>
     <ul id="expenseList"></ul>
 
-    <!-- Monthly History Section -->
-    <h3>📊 Monthly History</h3>
-    <table id="historyTable" border="1" cellspacing="0" cellpadding="5">
+    <h3>Monthly History</h3>
+    <table id="historyTable">
       <thead>
         <tr>
           <th>Month</th>
@@ -44,49 +43,26 @@
           <th>Remaining (₱)</th>
         </tr>
       </thead>
-      <tbody>
-        <!-- Rows inserted dynamically -->
-      </tbody>
+      <tbody></tbody>
     </table>
   </div>
 
   <script>
-    const api = "http://localhost:3000/expenses";
+    // Use relative URLs so the app works when served from the same server
+    const apiBase = '';
+    const expensesApi = apiBase + '/expenses';
+    const budgetApi = apiBase + '/monthly-budget';
+    const historyApi = apiBase + '/history';
+
     let editingId = null;
 
-    function getCurrentMonthKey() {
-      const now = new Date();
-      return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    function getMonthKey(date) {
+      return new Date(date).toISOString().slice(0, 7);
     }
 
-    let monthKey = getCurrentMonthKey();
-    let totalBudget = parseFloat(localStorage.getItem(`budget-${monthKey}`)) || 0;
-    document.getElementById("budgetInput").value = totalBudget;
-
-    function checkMonthlyReset() {
-      const lastMonthKey = localStorage.getItem("lastMonthKey");
-      if (lastMonthKey && lastMonthKey !== monthKey) {
-        getTotalSpent().then(spent => {
-          localStorage.setItem(`history-${lastMonthKey}`, JSON.stringify({
-            budget: parseFloat(localStorage.getItem(`budget-${lastMonthKey}`)) || 0,
-            spent: spent,
-            remaining: (parseFloat(localStorage.getItem(`budget-${lastMonthKey}`)) || 0) - spent
-          }));
-        });
-      }
-      localStorage.setItem("lastMonthKey", monthKey);
-    }
-
-    document.getElementById("budgetInput").addEventListener("input", (e) => {
-      totalBudget = parseFloat(e.target.value) || 0;
-      localStorage.setItem(`budget-${monthKey}`, totalBudget);
-      updateRemainingBalance();
-      updateProgressBar();
-      loadMonthlyHistory();
-    });
-
+    // ---------- Load Expenses ----------
     async function getExpenses() {
-      const res = await fetch(api);
+      const res = await fetch(expensesApi);
       const data = await res.json();
       const list = document.getElementById("expenseList");
       list.innerHTML = "";
@@ -96,8 +72,8 @@
         const li = document.createElement("li");
         li.innerHTML = `
           <span>
-            <strong>${exp.category}</strong> - ₱${exp.amount}
-            <em>(${formattedDate})</em> : ${exp.description}
+            <strong>${escapeHtml(exp.category)}</strong> - ₱${Number(exp.amount).toFixed(2)}
+            <em>(${formattedDate})</em> : ${escapeHtml(exp.description || '')}
           </span>
           <div class="actions">
             <button class="update" onclick="editExpense(${exp.id})">Update</button>
@@ -107,58 +83,109 @@
         list.appendChild(li);
       });
 
-      updateRemainingBalance();
-      updateProgressBar();
-      loadMonthlyHistory();
+      await updateRemainingBalance();
+      await updateProgressBar();
     }
 
+    // simple html escape to avoid injection
+    function escapeHtml(s) {
+      if (!s) return '';
+      return s.replace(/[&<>"'`=\/]/g, function (c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'}[c];
+      });
+    }
+
+    // ---------- Budget Handling (DB-backed) ----------
+    // current month key
+    const monthKey = getMonthKey(new Date());
+
+    async function loadBudgetForMonth(month) {
+      const res = await fetch(`${budgetApi}/${month}`);
+      const data = await res.json();
+      return data.budget ? Number(data.budget) : 0;
+    }
+
+    async function saveBudgetForMonth(month, budget) {
+      await fetch(budgetApi, {
+        method: 'POST',
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month, budget })
+      });
+    }
+
+    // initialize budget input
+    (async () => {
+      const currentBudget = await loadBudgetForMonth(monthKey);
+      document.getElementById("budgetInput").value = currentBudget ? currentBudget : '';
+      // default the date input to today
+      document.getElementById("dateInput").value = new Date().toISOString().split('T')[0];
+      // load data
+      await getExpenses();
+      await getHistory();
+    })();
+
+    // Save budget on input change (debouncing not implemented for simplicity)
+    document.getElementById("budgetInput").addEventListener("change", async (e) => {
+      const monthBudget = parseFloat(e.target.value) || 0;
+      await saveBudgetForMonth(monthKey, monthBudget);
+      await updateRemainingBalance();
+      await updateProgressBar();
+      await getHistory();
+    });
+
+    // ---------- CRUD ----------
     async function submitExpense() {
       const category = document.getElementById("categoryInput").value.trim();
-      const amount = parseFloat(document.getElementById("amountInput").value.trim());
+      const amountRaw = document.getElementById("amountInput").value.trim();
+      const amount = amountRaw === "" ? null : parseFloat(amountRaw);
       const description = document.getElementById("descInput").value.trim();
       const date = document.getElementById("dateInput").value;
 
-      if (!category || !amount || !date) {
-        Swal.fire("Missing Fields", "Please fill all required fields.", "warning");
-        return;
-      }
-
-      const expenses = await fetch(api).then(res => res.json());
-      const spent = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
-      const remaining = totalBudget - spent;
-
-      if (!editingId && amount > remaining) {
-        Swal.fire("Budget Exceeded", "This expense exceeds your remaining funds.", "error");
+      if (!category || amount == null || !date) {
+        Swal.fire("Missing Fields", "Please fill category, amount and date.", "warning");
         return;
       }
 
       const method = editingId ? "PUT" : "POST";
-      const url = editingId ? `${api}/${editingId}` : api;
+      const url = editingId ? `${expensesApi}/${editingId}` : expensesApi;
 
-      await fetch(url, {
+      const resp = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ category, amount, description, date })
       });
 
-      Swal.fire(editingId ? "Updated!" : "Added!", `Expense ${editingId ? "updated" : "added"} successfully.`, "success");
+      if (!resp.ok) {
+        const err = await resp.json().catch(()=>({message: 'Unknown error'}));
+        Swal.fire("Error", err.message || "Failed to save expense.", "error");
+        return;
+      }
+
       editingId = null;
       clearForm();
-      getExpenses();
+      await getExpenses();
+      await getHistory();
+      Swal.fire("Success!", "Expense saved.", "success");
     }
 
     async function editExpense(id) {
-      const exp = await fetch(`${api}/${id}`).then(res => res.json());
+      const res = await fetch(`${expensesApi}/${id}`);
+      if (!res.ok) {
+        Swal.fire("Error", "Failed to fetch expense.", "error");
+        return;
+      }
+      const exp = await res.json();
       document.getElementById("categoryInput").value = exp.category;
-      document.getElementById("amountInput").value = exp.amount;
-      document.getElementById("descInput").value = exp.description;
+      document.getElementById("amountInput").value = Number(exp.amount).toFixed(2);
+      document.getElementById("descInput").value = exp.description || '';
       document.getElementById("dateInput").value = new Date(exp.date).toISOString().split("T")[0];
       editingId = id;
       document.getElementById("submitButton").innerText = "Update Expense";
+      document.getElementById("formTitle").innerText = "Update Expense";
     }
 
-    function deleteExpense(id) {
-      Swal.fire({
+    async function deleteExpense(id) {
+      const result = await Swal.fire({
         title: "Are you sure?",
         text: "This expense will be permanently deleted.",
         icon: "warning",
@@ -166,83 +193,82 @@
         confirmButtonColor: "#d33",
         cancelButtonColor: "#3085d6",
         confirmButtonText: "Yes, delete it!"
-      }).then(result => {
-        if (result.isConfirmed) {
-          fetch(`${api}/${id}`, { method: "DELETE" }).then(() => {
-            Swal.fire("Deleted!", "The expense has been removed.", "success");
-            getExpenses();
-          });
-        }
       });
+
+      if (result.isConfirmed) {
+        const resp = await fetch(`${expensesApi}/${id}`, { method: "DELETE" });
+        if (!resp.ok) {
+          Swal.fire("Error", "Failed to delete expense.", "error");
+          return;
+        }
+        await getExpenses();
+        await getHistory();
+        Swal.fire("Deleted!", "The expense has been removed.", "success");
+      }
     }
 
     function clearForm() {
       document.getElementById("categoryInput").value = "";
       document.getElementById("amountInput").value = "";
       document.getElementById("descInput").value = "";
-      document.getElementById("dateInput").value = "";
+      document.getElementById("dateInput").value = new Date().toISOString().split('T')[0];
       editingId = null;
       document.getElementById("submitButton").innerText = "Add Expense";
+      document.getElementById("formTitle").innerText = "Add Expense";
     }
 
+    // ---------- Remaining & Progress ----------
     async function updateRemainingBalance() {
-      const expenses = await fetch(api).then(res => res.json());
-      const spent = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
-      const remaining = totalBudget - spent;
+      const expenses = await fetch(expensesApi).then(res => res.json());
+      const spent = expenses
+        .filter(exp => getMonthKey(exp.date) === monthKey)
+        .reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
 
-      const remainingElem = document.getElementById("remainingBalance");
-      remainingElem.innerText = remaining.toFixed(2);
-      remainingElem.style.color = remaining < 0 ? "#ff5c5c" : "#333";
+      const budget = await loadBudgetForMonth(monthKey);
+      const remaining = (Number(budget) || 0) - spent;
+      const elem = document.getElementById("remainingBalance");
+      elem.innerText = remaining.toFixed(2);
+      elem.style.color = remaining < 0 ? "#ff5c5c" : "#333";
     }
 
     async function updateProgressBar() {
-      const expenses = await fetch(api).then(res => res.json());
-      const spent = expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
-      const percent = totalBudget ? (spent / totalBudget) * 100 : 0;
+      const expenses = await fetch(expensesApi).then(res => res.json());
+      const spent = expenses
+        .filter(exp => getMonthKey(exp.date) === monthKey)
+        .reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
+
+      const budget = await loadBudgetForMonth(monthKey);
+      const percent = budget ? (spent / Number(budget)) * 100 : 0;
 
       const bar = document.getElementById("budgetProgress");
       bar.style.width = Math.min(percent, 100) + "%";
       bar.innerText = `${Math.round(percent)}%`;
-
-      if (percent < 80) {
-        bar.style.backgroundColor = "#4caf50";
-      } else if (percent >= 80 && percent <= 100) {
-        bar.style.backgroundColor = "#ffa500";
-      } else {
-        bar.style.backgroundColor = "#ff5c5c";
-      }
+      // set color by threshold
+      if (percent < 80) bar.style.backgroundColor = "#4caf50";
+      else if (percent <= 100) bar.style.backgroundColor = "#ffa500";
+      else bar.style.backgroundColor = "#ff5c5c";
     }
 
-    async function getTotalSpent() {
-      const expenses = await fetch(api).then(res => res.json());
-      return expenses.reduce((sum, exp) => sum + parseFloat(exp.amount), 0);
-    }
-
-    function loadMonthlyHistory() {
+    // ---------- Monthly History ----------
+    async function getHistory() {
+      const res = await fetch(historyApi);
+      const rows = await res.json();
       const tbody = document.querySelector("#historyTable tbody");
       tbody.innerHTML = "";
-
-      const keys = Object.keys(localStorage)
-        .filter(k => k.startsWith("history-"))
-        .sort();
-
-      keys.forEach(key => {
-        const monthData = JSON.parse(localStorage.getItem(key));
-        const row = document.createElement("tr");
-
-        row.innerHTML = `
-          <td>${key.replace("history-", "")}</td>
-          <td>₱${monthData.budget.toFixed(2)}</td>
-          <td>₱${monthData.spent.toFixed(2)}</td>
-          <td style="color:${monthData.remaining < 0 ? '#ff5c5c':'#333'}">₱${monthData.remaining.toFixed(2)}</td>
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(r.month)}</td>
+          <td>₱${Number(r.budget || 0).toFixed(2)}</td>
+          <td>₱${Number(r.spent || 0).toFixed(2)}</td>
+          <td style="color:${(r.remaining < 0)?'#ff5c5c':'#333'}">₱${Number(r.remaining || 0).toFixed(2)}</td>
         `;
-        tbody.appendChild(row);
+        tbody.appendChild(tr);
       });
     }
 
-    // Initialize App
-    checkMonthlyReset();
-    getExpenses();
+    // ---------- Initialize (exports already loaded earlier) ----------
+    // getExpenses() and getHistory() called after initial budget load above
   </script>
 </body>
 </html>

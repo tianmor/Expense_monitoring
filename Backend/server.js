@@ -1,98 +1,171 @@
 require('dotenv').config();
-var express = require('express');
-var bodyParser = require('body-parser');
-var mysql = require('mysql2');
-var cors = require('cors');
-var path = require('path');   // for serving frontend
-var app = express();
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const mysql = require('mysql2');
 
-var port = process.env.PORT || 3000;
+const app = express();
+const port = process.env.PORT || 3000;
 
-// Middleware
-app.use(bodyParser.json());
+app.use(cors());
 app.use(express.json());
-app.use(cors()); // allows requests from your frontend
+app.use(express.urlencoded({ extended: true }));
 
-// ---------- Serve Frontend ----------
+// Serve frontend static files
 app.use(express.static(path.join(__dirname, '../frontend')));
-
-// Default route → load index.html
-app.get('/', function(req, res) {
+app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
-// MySQL Connection
-var db = mysql.createConnection({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME
-});
+// MySQL pool
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || '',
+  database: process.env.DB_NAME || 'budget_db',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0
+}).promise();
 
-db.connect(function(err) {
-  if (err) throw err;
-  console.log("✅ Connected to MySQL database (" + process.env.DB_NAME + ")");
-});
+// ✅ TEST CONNECTION + SHOW MESSAGE
+pool.getConnection()
+  .then(conn => {
+    console.log("📦 MySQL Database Connected Successfully!");
+    conn.release();
+  })
+  .catch(err => {
+    console.error("❌ Database Connection Failed:", err);
+  });
 
-// ---------- CRUD Operations ----------
-
-// CREATE - Add a new expense
-app.post('/expenses', function(req, res) {
-  var { category, amount, description, date } = req.body;
-
-  db.query(
-    "INSERT INTO expenses (category, amount, description, date) VALUES (?, ?, ?, ?)",
-    [category, amount, description, date],
-    function(err, result) {
-      if (err) return res.status(500).json({ message: "Error adding expense", error: err });
-      res.json({ message: "Expense added successfully" });
+// ---------- Expenses CRUD ----------
+app.post('/expenses', async (req, res) => {
+  try {
+    const { category, amount, description, date } = req.body;
+    if (!category || amount == null || !date) {
+      return res.status(400).json({ message: 'Missing required fields' });
     }
-  );
+    const q = "INSERT INTO expenses (category, amount, description, date) VALUES (?, ?, ?, ?)";
+    await pool.execute(q, [category, parseFloat(amount), description || null, date]);
+    res.json({ message: 'Expense added successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error adding expense', error: err.message });
+  }
 });
 
-// READ - Get all expenses
-app.get('/expenses', function(req, res) {
-  db.query("SELECT * FROM expenses ORDER BY date DESC", function(err, results) {
-    if (err) return res.status(500).json({ message: "Error fetching expenses", error: err });
-    res.json(results);
-  });
+app.get('/expenses', async (req, res) => {
+  try {
+    const [rows] = await pool.query("SELECT * FROM expenses ORDER BY date DESC, id DESC");
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error fetching expenses', error: err.message });
+  }
 });
 
-// READ - Get a single expense by ID
-app.get('/expenses/:id', function(req, res) {
-  const id = req.params.id;
-  db.query("SELECT * FROM expenses WHERE id = ?", [id], function(err, results) {
-    if (err) return res.status(500).json({ message: "Error fetching expense", error: err });
-    if (results.length === 0) return res.status(404).json({ message: "Expense not found" });
-    res.json(results[0]);
-  });
+app.get('/expenses/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const [rows] = await pool.execute("SELECT * FROM expenses WHERE id = ?", [id]);
+    if (!rows.length) return res.status(404).json({ message: 'Expense not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error fetching expense', error: err.message });
+  }
 });
 
-// UPDATE - Edit an expense
-app.put('/expenses/:id', function(req, res) {
-  var id = req.params.id;
-  var { category, amount, description, date } = req.body;
+app.put('/expenses/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { category, amount, description, date } = req.body;
+    await pool.execute(
+      "UPDATE expenses SET category=?, amount=?, description=?, date=? WHERE id=?",
+      [category, parseFloat(amount), description || null, date, id]
+    );
+    res.json({ message: 'Expense updated successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error updating expense', error: err.message });
+  }
+});
 
-  db.query(
-    "UPDATE expenses SET category=?, amount=?, description=?, date=? WHERE id=?",
-    [category, amount, description, date, id],
-    function(err, result) {
-      if (err) return res.status(500).json({ message: "Error updating expense", error: err });
-      res.json({ message: "Expense updated successfully" });
+app.delete('/expenses/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    await pool.execute("DELETE FROM expenses WHERE id = ?", [id]);
+    res.json({ message: 'Expense deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error deleting expense', error: err.message });
+  }
+});
+
+// ---------- Monthly Budget ----------
+app.post('/monthly-budget', async (req, res) => {
+  try {
+    const { month, budget } = req.body;
+    if (!month || budget == null) {
+      return res.status(400).json({ message: 'Missing month or budget' });
     }
-  );
+    const q = `INSERT INTO monthly_budget (month, budget) VALUES (?, ?)
+               ON DUPLICATE KEY UPDATE budget = ?`;
+    await pool.execute(q, [month, parseFloat(budget), parseFloat(budget)]);
+    res.json({ message: 'Budget updated' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error updating budget', error: err.message });
+  }
 });
 
-// DELETE - Remove an expense
-app.delete('/expenses/:id', function(req, res) {
-  var id = req.params.id;
-  db.query("DELETE FROM expenses WHERE id=?", [id], function(err, result) {
-    if (err) return res.status(500).json({ message: "Error deleting expense", error: err });
-    res.json({ message: "Expense deleted successfully" });
-  });
+app.get('/monthly-budget/:month', async (req, res) => {
+  try {
+    const month = req.params.month;
+    const [rows] = await pool.execute("SELECT * FROM monthly_budget WHERE month = ?", [month]);
+    if (rows.length) return res.json(rows[0]);
+    res.json({ month, budget: 0 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error fetching budget', error: err.message });
+  }
 });
 
-// Start server
-app.listen(port, function() {
+// ---------- History ----------
+app.get('/history', async (req, res) => {
+  try {
+    const q = `
+      SELECT months.month,
+             COALESCE(m.budget, 0) AS budget,
+             COALESCE(SUM(e.amount), 0) AS spent,
+             COALESCE(m.budget, 0) - COALESCE(SUM(e.amount), 0) AS remaining
+      FROM (
+        SELECT DISTINCT DATE_FORMAT(date, '%Y-%m') AS month FROM expenses
+        UNION
+        SELECT month FROM monthly_budget
+      ) AS months
+      LEFT JOIN monthly_budget m ON m.month = months.month
+      LEFT JOIN expenses e ON DATE_FORMAT(e.date, '%Y-%m') = months.month
+      GROUP BY months.month
+      ORDER BY months.month DESC;
+    `;
+
+    const [rows] = await pool.query(q);
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error fetching history', error: err.message });
+  }
+});
+
+// Catch-all
+app.use((req, res, next) => {
+  if (req.method === 'GET' && !req.path.startsWith('/api')) {
+    return res.sendFile(path.join(__dirname, '../frontend/index.html'));
+  }
+  next();
+});
+
+app.listen(port, () => {
   console.log(`🚀 Server running at http://localhost:${port}`);
 });
