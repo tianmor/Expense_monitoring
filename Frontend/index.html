@@ -2,273 +2,290 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Expense Monitoring System</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Expense Monitoring System — Landing</title>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="container">
+  <!-- Splash Screen -->
+  <div id="splash">
+    <h1>Expense Monitoring</h1>
+    <p>"The art of managing money is not in restriction, but in awareness. Track, reflect, and let every financial decision guide you towards freedom and peace."</p>
+  </div>
+
+  <!-- Main Content -->
+  <div class="container" id="mainContent">
     <h1>💰 Expense Monitoring System</h1>
 
-    <!-- Budget Section -->
-    <div class="budget">
-      <h3>💵 Monthly Budget</h3>
-      <input id="budgetInput" type="number" placeholder="Enter your monthly budget" />
-      <p>Remaining Balance: ₱<span id="remainingBalance">0.00</span></p>
-      <div class="progress-container">
-        <div id="budgetProgress">0%</div>
+    <div id="mainArea" class="main-area hidden">
+      <!-- Budget Section -->
+      <div class="budget" id="budgetSection">
+        <h3>💵 Monthly Budget</h3>
+        <input id="budgetInput" type="number" placeholder="Enter your monthly budget" />
+        <p>Remaining Balance: ₱<span id="remainingBalance">0.00</span></p>
+        <div class="progress-container">
+          <div id="budgetProgress">0%</div>
+        </div>
+      </div>
+
+      <!-- Add/Edit Expense Form -->
+      <div class="form" id="updateSection">
+        <h3 id="formTitle">Add Expense</h3>
+        <input id="categoryInput" placeholder="Category (e.g. Food)" />
+        <input id="amountInput" type="number" placeholder="Amount" />
+        <input id="descInput" placeholder="Description" />
+        <input id="dateInput" type="date" />
+        <button id="submitButton" onclick="submitExpense()">Add Expense</button>
+      </div>
+
+      <h3>Expenses List</h3>
+      <ul id="expenseList"></ul>
+
+      <h3>Monthly History</h3>
+      <table id="historyTable">
+        <thead>
+          <tr>
+            <th>Month</th>
+            <th>Budget (₱)</th>
+            <th>Spent (₱)</th>
+            <th>Remaining (₱)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Budget Modal (kept for accessibility if needed, but saving is auto) -->
+  <div id="budgetModal" class="modal-overlay" role="dialog" aria-modal="true" style="display:none;">
+    <div class="modal">
+      <h3>Set Monthly Budget</h3>
+      <p class="small">This will save a budget for the current month.</p>
+      <input id="modalBudgetInput" type="number" placeholder="Enter budget amount" />
+      <div class="modal-actions">
+        <button id="modalCancel" class="ghost">Cancel</button>
+        <button id="modalSave">Save</button>
       </div>
     </div>
-
-    <!-- Add/Edit Expense Form -->
-    <div class="form">
-      <h3 id="formTitle">Add Expense</h3>
-      <input id="categoryInput" placeholder="Category (e.g. Food)" />
-      <input id="amountInput" type="number" placeholder="Amount" />
-      <input id="descInput" placeholder="Description" />
-      <input id="dateInput" type="date" />
-      <button id="submitButton" onclick="submitExpense()">Add Expense</button>
-    </div>
-
-    <h3>Expenses List</h3>
-    <ul id="expenseList"></ul>
-
-    <h3>Monthly History</h3>
-    <table id="historyTable">
-      <thead>
-        <tr>
-          <th>Month</th>
-          <th>Budget (₱)</th>
-          <th>Spent (₱)</th>
-          <th>Remaining (₱)</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
   </div>
 
   <script>
-    // Use relative URLs so the app works when served from the same server
     const apiBase = '';
     const expensesApi = apiBase + '/expenses';
     const budgetApi = apiBase + '/monthly-budget';
     const historyApi = apiBase + '/history';
 
     let editingId = null;
+    const monthKey = new Date().toISOString().slice(0,7); // e.g. "2025-12"
+    let currentBudget = 0; // authoritative budget value used in calculations
 
-    function getMonthKey(date) {
-      return new Date(date).toISOString().slice(0, 7);
+    const mainAreaEl = document.getElementById('mainArea');
+    const mainContentEl = document.getElementById('mainContent');
+
+    // Splash auto-hide
+    window.addEventListener('load', async () => {
+      mainContentEl.style.display = 'none';
+      setTimeout(async () => {
+        const splash = document.getElementById('splash');
+        splash.style.opacity = '0';
+        splash.style.transition = 'opacity 0.5s ease';
+        setTimeout(() => {
+          splash.style.display = 'none';
+          mainContentEl.style.display = 'block';
+        }, 500);
+        await initApp();
+      }, 1200);
+    });
+
+    // Initialize App
+    async function initApp() {
+      mainAreaEl.classList.remove('hidden');
+      document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
+
+      // Load budget from backend for current month and set input
+      const savedBudget = await loadBudgetForMonth(monthKey);
+      currentBudget = savedBudget;
+      document.getElementById('budgetInput').value = currentBudget || '';
+
+      await getExpenses(); // getExpenses will call updateRemainingBalance/progress
+      await getHistory();
     }
 
-    // ---------- Load Expenses ----------
-    async function getExpenses() {
-      const res = await fetch(expensesApi);
-      const data = await res.json();
-      const list = document.getElementById("expenseList");
-      list.innerHTML = "";
-
-      data.forEach(exp => {
-        const formattedDate = new Date(exp.date).toISOString().split("T")[0];
-        const li = document.createElement("li");
-        li.innerHTML = `
-          <span>
-            <strong>${escapeHtml(exp.category)}</strong> - ₱${Number(exp.amount).toFixed(2)}
-            <em>(${formattedDate})</em> : ${escapeHtml(exp.description || '')}
-          </span>
-          <div class="actions">
-            <button class="update" onclick="editExpense(${exp.id})">Update</button>
-            <button class="delete" onclick="deleteExpense(${exp.id})">Delete</button>
-          </div>
-        `;
-        list.appendChild(li);
-      });
-
-      await updateRemainingBalance();
-      await updateProgressBar();
-    }
-
-    // simple html escape to avoid injection
-    function escapeHtml(s) {
-      if (!s) return '';
-      return s.replace(/[&<>"'`=\/]/g, function (c) {
-        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'}[c];
-      });
-    }
-
-    // ---------- Budget Handling (DB-backed) ----------
-    // current month key
-    const monthKey = getMonthKey(new Date());
-
+    // ---------- Budget Functions ----------
     async function loadBudgetForMonth(month) {
-      const res = await fetch(`${budgetApi}/${month}`);
-      const data = await res.json();
-      return data.budget ? Number(data.budget) : 0;
+      try {
+        const res = await fetch(`${budgetApi}/${month}`);
+        const data = await res.json();
+        const b = (data && data.budget != null) ? Number(data.budget) : 0;
+        return isFinite(b) ? b : 0;
+      } catch (e) {
+        console.error('Failed to load budget', e);
+        return 0;
+      }
     }
 
     async function saveBudgetForMonth(month, budget) {
-      await fetch(budgetApi, {
-        method: 'POST',
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ month, budget })
-      });
+      try {
+        await fetch(budgetApi, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ month, budget })
+        });
+      } catch (e) {
+        console.error('Failed to save budget', e);
+      }
     }
 
-    // initialize budget input
-    (async () => {
-      const currentBudget = await loadBudgetForMonth(monthKey);
-      document.getElementById("budgetInput").value = currentBudget ? currentBudget : '';
-      // default the date input to today
-      document.getElementById("dateInput").value = new Date().toISOString().split('T')[0];
-      // load data
-      await getExpenses();
-      await getHistory();
-    })();
+    // Debounce helper
+    function debounce(fn, delay = 700) {
+      let t;
+      return (...args) => {
+        clearTimeout(t);
+        t = setTimeout(() => fn(...args), delay);
+      };
+    }
 
-    // Save budget on input change (debouncing not implemented for simplicity)
-    document.getElementById("budgetInput").addEventListener("change", async (e) => {
-      const monthBudget = parseFloat(e.target.value) || 0;
-      await saveBudgetForMonth(monthKey, monthBudget);
+    // Autosave handler
+    const handleBudgetInput = debounce(async () => {
+      const raw = document.getElementById('budgetInput').value.trim();
+      const value = raw === '' ? 0 : parseFloat(raw);
+      currentBudget = isFinite(value) ? value : 0;
+      await saveBudgetForMonth(monthKey, currentBudget);
       await updateRemainingBalance();
       await updateProgressBar();
       await getHistory();
-    });
+    }, 700);
 
-    // ---------- CRUD ----------
+    // ---------- Expenses CRUD ----------
+    async function getExpenses() {
+      try {
+        const res = await fetch(expensesApi);
+        const data = await res.json();
+        const list = document.getElementById('expenseList');
+        list.innerHTML = '';
+        data.forEach(exp => {
+          const formattedDate = new Date(exp.date).toISOString().split('T')[0];
+          const li = document.createElement('li');
+          li.innerHTML = `<span><strong>${escapeHtml(exp.category)}</strong> - ₱${Number(exp.amount).toFixed(2)} <em>(${formattedDate})</em> : ${escapeHtml(exp.description||'')}</span>
+            <div class="actions">
+              <button class="update" onclick="editExpense(${exp.id})">Update</button>
+              <button class="delete" onclick="deleteExpense(${exp.id})">Delete</button>
+            </div>`;
+          list.appendChild(li);
+        });
+        await updateRemainingBalance();
+        await updateProgressBar();
+      } catch (err) { console.error(err); }
+    }
+
     async function submitExpense() {
-      const category = document.getElementById("categoryInput").value.trim();
-      const amountRaw = document.getElementById("amountInput").value.trim();
-      const amount = amountRaw === "" ? null : parseFloat(amountRaw);
-      const description = document.getElementById("descInput").value.trim();
-      const date = document.getElementById("dateInput").value;
+      const category = document.getElementById('categoryInput').value.trim();
+      const amountRaw = document.getElementById('amountInput').value.trim();
+      const amount = amountRaw === '' ? null : parseFloat(amountRaw);
+      const description = document.getElementById('descInput').value.trim();
+      const date = document.getElementById('dateInput').value;
+      if(!category || amount==null || !date) { Swal.fire('Missing Fields','Please fill category, amount and date.','warning'); return; }
 
-      if (!category || amount == null || !date) {
-        Swal.fire("Missing Fields", "Please fill category, amount and date.", "warning");
-        return;
-      }
-
-      const method = editingId ? "PUT" : "POST";
+      const method = editingId ? 'PUT' : 'POST';
       const url = editingId ? `${expensesApi}/${editingId}` : expensesApi;
 
-      const resp = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category, amount, description, date })
-      });
+      const resp = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify({category,amount,description,date}) });
+      if(!resp.ok) { Swal.fire('Error','Failed to save expense.','error'); return; }
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(()=>({message: 'Unknown error'}));
-        Swal.fire("Error", err.message || "Failed to save expense.", "error");
-        return;
+      editingId=null; clearForm(); await getExpenses(); await getHistory(); Swal.fire('Success!','Expense saved.','success');
+    }
+
+    function clearForm() {
+      document.getElementById('categoryInput').value='';
+      document.getElementById('amountInput').value='';
+      document.getElementById('descInput').value='';
+      document.getElementById('dateInput').value=new Date().toISOString().split('T')[0];
+      editingId=null;
+      document.getElementById('submitButton').innerText='Add Expense';
+      document.getElementById('formTitle').innerText='Add Expense';
+    }
+
+    async function updateRemainingBalance() {
+      try {
+        const expenses = await fetch(expensesApi).then(r=>r.json());
+        const spent = expenses.filter(exp=>exp.date.slice(0,7)===monthKey).reduce((sum,exp)=>sum+parseFloat(exp.amount||0),0);
+        const budget = currentBudget || 0;
+        const remaining = (budget)-spent;
+        const elem = document.getElementById('remainingBalance');
+        elem.innerText = remaining.toFixed(2);
+        elem.style.color = remaining<0?'#ff5c5c':'#333';
+      } catch (e) {
+        console.error('updateRemainingBalance error', e);
       }
+    }
 
-      editingId = null;
-      clearForm();
-      await getExpenses();
-      await getHistory();
-      Swal.fire("Success!", "Expense saved.", "success");
+    async function updateProgressBar() {
+      try {
+        const expenses = await fetch(expensesApi).then(r=>r.json());
+        const spent = expenses.filter(exp=>exp.date.slice(0,7)===monthKey).reduce((sum,exp)=>sum+parseFloat(exp.amount||0),0);
+        const budget = currentBudget || 0;
+        const percent = budget ? (spent/budget)*100 : 0;
+        const bar = document.getElementById('budgetProgress');
+        bar.style.width = Math.min(percent,100)+'%';
+        bar.innerText=`${Math.round(percent)}%`;
+        if(percent<80) bar.style.backgroundColor='#4caf50';
+        else if(percent<=100) bar.style.backgroundColor='#ffa500';
+        else bar.style.backgroundColor='#ff5c5c';
+      } catch (e) {
+        console.error('updateProgressBar error', e);
+      }
+    }
+
+    async function getHistory() {
+      try {
+        const res = await fetch(historyApi);
+        const rows = await res.json();
+        const tbody = document.querySelector('#historyTable tbody');
+        tbody.innerHTML='';
+        rows.forEach(r=>{
+          const tr = document.createElement('tr');
+          tr.innerHTML=`<td>${escapeHtml(r.month)}</td>
+                        <td>₱${Number(r.budget||0).toFixed(2)}</td>
+                        <td>₱${Number(r.spent||0).toFixed(2)}</td>
+                        <td style="color:${(r.remaining<0)?'#ff5c5c':'#333'}">₱${Number(r.remaining||0).toFixed(2)}</td>`;
+          tbody.appendChild(tr);
+        });
+      } catch(e){ console.error(e); }
     }
 
     async function editExpense(id) {
       const res = await fetch(`${expensesApi}/${id}`);
-      if (!res.ok) {
-        Swal.fire("Error", "Failed to fetch expense.", "error");
-        return;
-      }
+      if(!res.ok){ Swal.fire('Error','Failed to fetch expense.','error'); return; }
       const exp = await res.json();
-      document.getElementById("categoryInput").value = exp.category;
-      document.getElementById("amountInput").value = Number(exp.amount).toFixed(2);
-      document.getElementById("descInput").value = exp.description || '';
-      document.getElementById("dateInput").value = new Date(exp.date).toISOString().split("T")[0];
+      document.getElementById('categoryInput').value = exp.category;
+      document.getElementById('amountInput').value = Number(exp.amount).toFixed(2);
+      document.getElementById('descInput').value = exp.description || '';
+      document.getElementById('dateInput').value = new Date(exp.date).toISOString().split('T')[0];
       editingId = id;
-      document.getElementById("submitButton").innerText = "Update Expense";
-      document.getElementById("formTitle").innerText = "Update Expense";
+      document.getElementById('submitButton').innerText = 'Update Expense';
+      document.getElementById('formTitle').innerText = 'Update Expense';
+
+      // ⭐ Scroll to Add/Update Expense form
+      document.getElementById('updateSection').scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
     }
 
     async function deleteExpense(id) {
-      const result = await Swal.fire({
-        title: "Are you sure?",
-        text: "This expense will be permanently deleted.",
-        icon: "warning",
-        showCancelButton: true,
-        confirmButtonColor: "#d33",
-        cancelButtonColor: "#3085d6",
-        confirmButtonText: "Yes, delete it!"
-      });
-
-      if (result.isConfirmed) {
-        const resp = await fetch(`${expensesApi}/${id}`, { method: "DELETE" });
-        if (!resp.ok) {
-          Swal.fire("Error", "Failed to delete expense.", "error");
-          return;
-        }
-        await getExpenses();
-        await getHistory();
-        Swal.fire("Deleted!", "The expense has been removed.", "success");
+      const result = await Swal.fire({title:'Are you sure?',text:'This expense will be permanently deleted.',icon:'warning',showCancelButton:true,confirmButtonColor:'#d33',cancelButtonColor:'#3085d6',confirmButtonText:'Yes, delete it!'});
+      if(result.isConfirmed){
+        await fetch(`${expensesApi}/${id}`,{method:'DELETE'});
+        await getExpenses(); await getHistory(); Swal.fire('Deleted!','The expense has been removed.','success');
       }
     }
 
-    function clearForm() {
-      document.getElementById("categoryInput").value = "";
-      document.getElementById("amountInput").value = "";
-      document.getElementById("descInput").value = "";
-      document.getElementById("dateInput").value = new Date().toISOString().split('T')[0];
-      editingId = null;
-      document.getElementById("submitButton").innerText = "Add Expense";
-      document.getElementById("formTitle").innerText = "Add Expense";
-    }
+    function escapeHtml(s){if(!s)return '';return s.replace(/[&<>"'`=\/]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D'}[c]));}
 
-    // ---------- Remaining & Progress ----------
-    async function updateRemainingBalance() {
-      const expenses = await fetch(expensesApi).then(res => res.json());
-      const spent = expenses
-        .filter(exp => getMonthKey(exp.date) === monthKey)
-        .reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
-
-      const budget = await loadBudgetForMonth(monthKey);
-      const remaining = (Number(budget) || 0) - spent;
-      const elem = document.getElementById("remainingBalance");
-      elem.innerText = remaining.toFixed(2);
-      elem.style.color = remaining < 0 ? "#ff5c5c" : "#333";
-    }
-
-    async function updateProgressBar() {
-      const expenses = await fetch(expensesApi).then(res => res.json());
-      const spent = expenses
-        .filter(exp => getMonthKey(exp.date) === monthKey)
-        .reduce((sum, exp) => sum + parseFloat(exp.amount || 0), 0);
-
-      const budget = await loadBudgetForMonth(monthKey);
-      const percent = budget ? (spent / Number(budget)) * 100 : 0;
-
-      const bar = document.getElementById("budgetProgress");
-      bar.style.width = Math.min(percent, 100) + "%";
-      bar.innerText = `${Math.round(percent)}%`;
-      // set color by threshold
-      if (percent < 80) bar.style.backgroundColor = "#4caf50";
-      else if (percent <= 100) bar.style.backgroundColor = "#ffa500";
-      else bar.style.backgroundColor = "#ff5c5c";
-    }
-
-    // ---------- Monthly History ----------
-    async function getHistory() {
-      const res = await fetch(historyApi);
-      const rows = await res.json();
-      const tbody = document.querySelector("#historyTable tbody");
-      tbody.innerHTML = "";
-      rows.forEach(r => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${escapeHtml(r.month)}</td>
-          <td>₱${Number(r.budget || 0).toFixed(2)}</td>
-          <td>₱${Number(r.spent || 0).toFixed(2)}</td>
-          <td style="color:${(r.remaining < 0)?'#ff5c5c':'#333'}">₱${Number(r.remaining || 0).toFixed(2)}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    // ---------- Initialize (exports already loaded earlier) ----------
-    // getExpenses() and getHistory() called after initial budget load above
+    // --- REAL TIME BUDGET INPUT UPDATE ---
+    document.getElementById('budgetInput').addEventListener('input', handleBudgetInput);
   </script>
 </body>
 </html>

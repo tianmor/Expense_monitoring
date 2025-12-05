@@ -5,7 +5,7 @@ const path = require('path');
 const mysql = require('mysql2');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 4000;
 
 app.use(cors());
 app.use(express.json());
@@ -28,28 +28,27 @@ const pool = mysql.createPool({
   queueLimit: 0
 }).promise();
 
-// ✅ TEST CONNECTION + SHOW MESSAGE
 pool.getConnection()
   .then(conn => {
-    console.log("📦 MySQL Database Connected Successfully!");
+    console.log("📦 MySQL Connected!");
     conn.release();
   })
-  .catch(err => {
-    console.error("❌ Database Connection Failed:", err);
-  });
+  .catch(err => console.error("❌ DB error:", err));
 
 // ---------- Expenses CRUD ----------
 app.post('/expenses', async (req, res) => {
   try {
     const { category, amount, description, date } = req.body;
-    if (!category || amount == null || !date) {
-      return res.status(400).json({ message: 'Missing required fields' });
-    }
-    const q = "INSERT INTO expenses (category, amount, description, date) VALUES (?, ?, ?, ?)";
-    await pool.execute(q, [category, parseFloat(amount), description || null, date]);
-    res.json({ message: 'Expense added successfully' });
+    if (!category || amount == null || !date)
+      return res.status(400).json({ message: 'Missing fields' });
+
+    await pool.execute(
+      "INSERT INTO expenses (category, amount, description, date) VALUES (?, ?, ?, ?)",
+      [category, parseFloat(amount), description || null, date]
+    );
+
+    res.json({ message: 'Expense added' });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: 'Error adding expense', error: err.message });
   }
 });
@@ -59,7 +58,6 @@ app.get('/expenses', async (req, res) => {
     const [rows] = await pool.query("SELECT * FROM expenses ORDER BY date DESC, id DESC");
     res.json(rows);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: 'Error fetching expenses', error: err.message });
   }
 });
@@ -68,10 +66,9 @@ app.get('/expenses/:id', async (req, res) => {
   try {
     const id = req.params.id;
     const [rows] = await pool.execute("SELECT * FROM expenses WHERE id = ?", [id]);
-    if (!rows.length) return res.status(404).json({ message: 'Expense not found' });
+    if (!rows.length) return res.status(404).json({ message: 'Not found' });
     res.json(rows[0]);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: 'Error fetching expense', error: err.message });
   }
 });
@@ -80,13 +77,14 @@ app.put('/expenses/:id', async (req, res) => {
   try {
     const id = req.params.id;
     const { category, amount, description, date } = req.body;
+
     await pool.execute(
       "UPDATE expenses SET category=?, amount=?, description=?, date=? WHERE id=?",
       [category, parseFloat(amount), description || null, date, id]
     );
-    res.json({ message: 'Expense updated successfully' });
+
+    res.json({ message: 'Expense updated' });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: 'Error updating expense', error: err.message });
   }
 });
@@ -95,9 +93,8 @@ app.delete('/expenses/:id', async (req, res) => {
   try {
     const id = req.params.id;
     await pool.execute("DELETE FROM expenses WHERE id = ?", [id]);
-    res.json({ message: 'Expense deleted successfully' });
+    res.json({ message: 'Expense deleted' });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: 'Error deleting expense', error: err.message });
   }
 });
@@ -106,15 +103,18 @@ app.delete('/expenses/:id', async (req, res) => {
 app.post('/monthly-budget', async (req, res) => {
   try {
     const { month, budget } = req.body;
-    if (!month || budget == null) {
-      return res.status(400).json({ message: 'Missing month or budget' });
-    }
-    const q = `INSERT INTO monthly_budget (month, budget) VALUES (?, ?)
-               ON DUPLICATE KEY UPDATE budget = ?`;
+    if (!month || budget == null)
+      return res.status(400).json({ message: 'Missing month/budget' });
+
+    const q = `
+      INSERT INTO monthly_budget (month, budget)
+      VALUES (?, ?)
+      ON DUPLICATE KEY UPDATE budget = ?
+    `;
     await pool.execute(q, [month, parseFloat(budget), parseFloat(budget)]);
+
     res.json({ message: 'Budget updated' });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: 'Error updating budget', error: err.message });
   }
 });
@@ -122,11 +122,13 @@ app.post('/monthly-budget', async (req, res) => {
 app.get('/monthly-budget/:month', async (req, res) => {
   try {
     const month = req.params.month;
-    const [rows] = await pool.execute("SELECT * FROM monthly_budget WHERE month = ?", [month]);
-    if (rows.length) return res.json(rows[0]);
-    res.json({ month, budget: 0 });
+    const [rows] = await pool.execute(
+      "SELECT * FROM monthly_budget WHERE month = ?",
+      [month]
+    );
+
+    res.json(rows.length ? rows[0] : { month, budget: 0 });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: 'Error fetching budget', error: err.message });
   }
 });
@@ -143,29 +145,24 @@ app.get('/history', async (req, res) => {
         SELECT DISTINCT DATE_FORMAT(date, '%Y-%m') AS month FROM expenses
         UNION
         SELECT month FROM monthly_budget
-      ) AS months
+      ) months
       LEFT JOIN monthly_budget m ON m.month = months.month
       LEFT JOIN expenses e ON DATE_FORMAT(e.date, '%Y-%m') = months.month
       GROUP BY months.month
-      ORDER BY months.month DESC;
+      ORDER BY months.month DESC
     `;
-
     const [rows] = await pool.query(q);
     res.json(rows);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: 'Error fetching history', error: err.message });
   }
 });
 
 // Catch-all
 app.use((req, res, next) => {
-  if (req.method === 'GET' && !req.path.startsWith('/api')) {
-    return res.sendFile(path.join(__dirname, '../frontend/index.html'));
-  }
-  next();
+  return res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });
 
 app.listen(port, () => {
-  console.log(`🚀 Server running at http://localhost:${port}`);
+  console.log(`🚀 Running at http://localhost:${port}`);
 });
