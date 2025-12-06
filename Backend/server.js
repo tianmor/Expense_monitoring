@@ -35,7 +35,10 @@ pool.getConnection()
   })
   .catch(err => console.error("❌ DB error:", err));
 
-// ---------- Expenses CRUD ----------
+
+// ===================== EXPENSES CRUD =====================
+
+// Create Expense
 app.post('/expenses', async (req, res) => {
   try {
     const { category, amount, description, date } = req.body;
@@ -53,19 +56,26 @@ app.post('/expenses', async (req, res) => {
   }
 });
 
+// Fetch All Expenses
 app.get('/expenses', async (req, res) => {
   try {
-    const [rows] = await pool.query("SELECT * FROM expenses ORDER BY date DESC, id DESC");
+    const [rows] = await pool.query(
+      "SELECT id, category, amount, description, DATE_FORMAT(date, '%Y-%m-%d') AS date FROM expenses ORDER BY date DESC, id DESC"
+    );
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: 'Error fetching expenses', error: err.message });
   }
 });
 
+// Fetch Expense by ID
 app.get('/expenses/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    const [rows] = await pool.execute("SELECT * FROM expenses WHERE id = ?", [id]);
+    const [rows] = await pool.execute(
+      "SELECT id, category, amount, description, DATE_FORMAT(date, '%Y-%m-%d') AS date FROM expenses WHERE id = ?",
+      [id]
+    );
     if (!rows.length) return res.status(404).json({ message: 'Not found' });
     res.json(rows[0]);
   } catch (err) {
@@ -73,6 +83,8 @@ app.get('/expenses/:id', async (req, res) => {
   }
 });
 
+
+// Update Expense
 app.put('/expenses/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -89,6 +101,7 @@ app.put('/expenses/:id', async (req, res) => {
   }
 });
 
+// Delete Expense
 app.delete('/expenses/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -99,12 +112,14 @@ app.delete('/expenses/:id', async (req, res) => {
   }
 });
 
-// ---------- Monthly Budget ----------
+
+// ===================== MONTHLY BUDGET =====================
+
 app.post('/monthly-budget', async (req, res) => {
   try {
     const { month, budget } = req.body;
     if (!month || budget == null)
-      return res.status(400).json({ message: 'Missing month/budget' });
+      return res.status(400).json({ message: 'Missing fields' });
 
     const q = `
       INSERT INTO monthly_budget (month, budget)
@@ -133,7 +148,9 @@ app.get('/monthly-budget/:month', async (req, res) => {
   }
 });
 
-// ---------- History ----------
+
+// ===================== HISTORY =====================
+
 app.get('/history', async (req, res) => {
   try {
     const q = `
@@ -158,7 +175,7 @@ app.get('/history', async (req, res) => {
   }
 });
 
-// Catch-all
+// Catch-all route (SPA support)
 app.use((req, res, next) => {
   return res.sendFile(path.join(__dirname, '../frontend/index.html'));
 });

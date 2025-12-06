@@ -43,6 +43,19 @@
       <h3>Expenses List</h3>
       <ul id="expenseList"></ul>
 
+      <!-- SEE MORE / SEE LESS BUTTON -->
+      <div style="text-align:center; margin-top:10px;">
+        <button id="toggleListBtn" onclick="toggleExpenseList()" style="
+          display:none;
+          background:#4a4a4a;
+          color:white;
+          padding:8px 16px;
+          border:none;
+          border-radius:6px;
+          cursor:pointer;
+        ">See More</button>
+      </div>
+
       <h3>Monthly History</h3>
       <table id="historyTable">
         <thead>
@@ -58,7 +71,7 @@
     </div>
   </div>
 
-  <!-- Budget Modal (kept for accessibility if needed, but saving is auto) -->
+  <!-- Budget Modal -->
   <div id="budgetModal" class="modal-overlay" role="dialog" aria-modal="true" style="display:none;">
     <div class="modal">
       <h3>Set Monthly Budget</h3>
@@ -79,12 +92,13 @@
 
     let editingId = null;
     const monthKey = new Date().toISOString().slice(0,7); // e.g. "2025-12"
-    let currentBudget = 0; // authoritative budget value used in calculations
+    let currentBudget = 0;
+    let showAllExpenses = false; // toggle state
+    let allExpenses = []; // cache all expenses
 
     const mainAreaEl = document.getElementById('mainArea');
     const mainContentEl = document.getElementById('mainContent');
 
-    // Splash auto-hide
     window.addEventListener('load', async () => {
       mainContentEl.style.display = 'none';
       setTimeout(async () => {
@@ -99,55 +113,38 @@
       }, 1200);
     });
 
-    // Initialize App
     async function initApp() {
       mainAreaEl.classList.remove('hidden');
       document.getElementById('dateInput').value = new Date().toISOString().split('T')[0];
 
-      // Load budget from backend for current month and set input
       const savedBudget = await loadBudgetForMonth(monthKey);
       currentBudget = savedBudget;
       document.getElementById('budgetInput').value = currentBudget || '';
 
-      await getExpenses(); // getExpenses will call updateRemainingBalance/progress
+      await getExpenses();
       await getHistory();
     }
 
-    // ---------- Budget Functions ----------
     async function loadBudgetForMonth(month) {
       try {
         const res = await fetch(`${budgetApi}/${month}`);
         const data = await res.json();
         const b = (data && data.budget != null) ? Number(data.budget) : 0;
         return isFinite(b) ? b : 0;
-      } catch (e) {
-        console.error('Failed to load budget', e);
-        return 0;
-      }
+      } catch (e) { console.error('Failed to load budget', e); return 0; }
     }
 
     async function saveBudgetForMonth(month, budget) {
       try {
-        await fetch(budgetApi, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ month, budget })
-        });
-      } catch (e) {
-        console.error('Failed to save budget', e);
-      }
+        await fetch(budgetApi, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ month, budget }) });
+      } catch (e) { console.error('Failed to save budget', e); }
     }
 
-    // Debounce helper
     function debounce(fn, delay = 700) {
       let t;
-      return (...args) => {
-        clearTimeout(t);
-        t = setTimeout(() => fn(...args), delay);
-      };
+      return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), delay); };
     }
 
-    // Autosave handler
     const handleBudgetInput = debounce(async () => {
       const raw = document.getElementById('budgetInput').value.trim();
       const value = raw === '' ? 0 : parseFloat(raw);
@@ -158,26 +155,55 @@
       await getHistory();
     }, 700);
 
-    // ---------- Expenses CRUD ----------
-    async function getExpenses() {
+    async function getExpenses(forceShowAll = false) {
       try {
         const res = await fetch(expensesApi);
-        const data = await res.json();
-        const list = document.getElementById('expenseList');
-        list.innerHTML = '';
-        data.forEach(exp => {
-          const formattedDate = new Date(exp.date).toISOString().split('T')[0];
-          const li = document.createElement('li');
-          li.innerHTML = `<span><strong>${escapeHtml(exp.category)}</strong> - ₱${Number(exp.amount).toFixed(2)} <em>(${formattedDate})</em> : ${escapeHtml(exp.description||'')}</span>
-            <div class="actions">
-              <button class="update" onclick="editExpense(${exp.id})">Update</button>
-              <button class="delete" onclick="deleteExpense(${exp.id})">Delete</button>
-            </div>`;
-          list.appendChild(li);
-        });
+        allExpenses = await res.json();
+
+        if(forceShowAll) showAllExpenses = true;
+
+        renderExpenseList();
         await updateRemainingBalance();
         await updateProgressBar();
       } catch (err) { console.error(err); }
+    }
+
+    function renderExpenseList() {
+      const list = document.getElementById('expenseList');
+      list.innerHTML = '';
+
+      const expensesToShow = showAllExpenses ? allExpenses : allExpenses.slice(0,10);
+
+      expensesToShow.forEach(exp => {
+        const formattedDate = (exp.date || '').slice(0, 10);
+        const li = document.createElement('li');
+        li.innerHTML = `
+          <span>
+            <strong>${escapeHtml(exp.category)}</strong> 
+            - ₱${Number(exp.amount).toFixed(2)} 
+            <em>(${formattedDate})</em> : 
+            ${escapeHtml(exp.description || '')}
+          </span>
+          <div class="actions">
+            <button class="update" onclick="editExpense(${exp.id})">Update</button>
+            <button class="delete" onclick="deleteExpense(${exp.id})">Delete</button>
+          </div>
+        `;
+        list.appendChild(li);
+      });
+
+      const toggleBtn = document.getElementById('toggleListBtn');
+      if(allExpenses.length > 10) {
+        toggleBtn.style.display = 'inline-block';
+        toggleBtn.innerText = showAllExpenses ? 'See Less' : 'See More';
+      } else {
+        toggleBtn.style.display = 'none';
+      }
+    }
+
+    function toggleExpenseList() {
+      showAllExpenses = !showAllExpenses;
+      renderExpenseList();
     }
 
     async function submitExpense() {
@@ -209,33 +235,25 @@
 
     async function updateRemainingBalance() {
       try {
-        const expenses = await fetch(expensesApi).then(r=>r.json());
-        const spent = expenses.filter(exp=>exp.date.slice(0,7)===monthKey).reduce((sum,exp)=>sum+parseFloat(exp.amount||0),0);
-        const budget = currentBudget || 0;
-        const remaining = (budget)-spent;
+        const spent = allExpenses.filter(exp=>exp.date.slice(0,7)===monthKey).reduce((sum,exp)=>sum+parseFloat(exp.amount||0),0);
+        const remaining = currentBudget - spent;
         const elem = document.getElementById('remainingBalance');
         elem.innerText = remaining.toFixed(2);
         elem.style.color = remaining<0?'#ff5c5c':'#333';
-      } catch (e) {
-        console.error('updateRemainingBalance error', e);
-      }
+      } catch(e){ console.error(e); }
     }
 
     async function updateProgressBar() {
       try {
-        const expenses = await fetch(expensesApi).then(r=>r.json());
-        const spent = expenses.filter(exp=>exp.date.slice(0,7)===monthKey).reduce((sum,exp)=>sum+parseFloat(exp.amount||0),0);
-        const budget = currentBudget || 0;
-        const percent = budget ? (spent/budget)*100 : 0;
+        const spent = allExpenses.filter(exp=>exp.date.slice(0,7)===monthKey).reduce((sum,exp)=>sum+parseFloat(exp.amount||0),0);
+        const percent = currentBudget ? (spent/currentBudget)*100 : 0;
         const bar = document.getElementById('budgetProgress');
         bar.style.width = Math.min(percent,100)+'%';
         bar.innerText=`${Math.round(percent)}%`;
         if(percent<80) bar.style.backgroundColor='#4caf50';
         else if(percent<=100) bar.style.backgroundColor='#ffa500';
         else bar.style.backgroundColor='#ff5c5c';
-      } catch (e) {
-        console.error('updateProgressBar error', e);
-      }
+      } catch(e){ console.error(e); }
     }
 
     async function getHistory() {
@@ -262,16 +280,12 @@
       document.getElementById('categoryInput').value = exp.category;
       document.getElementById('amountInput').value = Number(exp.amount).toFixed(2);
       document.getElementById('descInput').value = exp.description || '';
-      document.getElementById('dateInput').value = new Date(exp.date).toISOString().split('T')[0];
+      document.getElementById('dateInput').value = (exp.date || '').slice(0, 10);
       editingId = id;
       document.getElementById('submitButton').innerText = 'Update Expense';
       document.getElementById('formTitle').innerText = 'Update Expense';
 
-      // ⭐ Scroll to Add/Update Expense form
-      document.getElementById('updateSection').scrollIntoView({
-        behavior: 'smooth',
-        block: 'start'
-      });
+      document.getElementById('updateSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     async function deleteExpense(id) {
@@ -284,7 +298,6 @@
 
     function escapeHtml(s){if(!s)return '';return s.replace(/[&<>"'`=\/]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D'}[c]));}
 
-    // --- REAL TIME BUDGET INPUT UPDATE ---
     document.getElementById('budgetInput').addEventListener('input', handleBudgetInput);
   </script>
 </body>
